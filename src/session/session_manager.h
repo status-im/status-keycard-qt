@@ -1,0 +1,179 @@
+#pragma once
+
+#include "session_state.h"
+#include <keycard-qt/keycard_channel.h>
+#include <keycard-qt/command_set.h>
+#include <QObject>
+#include <QTimer>
+#include <QMutex>
+#include <memory>
+
+namespace StatusKeycard {
+
+/**
+ * @brief Manages keycard session lifecycle
+ * 
+ * Responsibilities:
+ * - Card/reader detection and monitoring
+ * - Automatic connection management
+ * - State machine management
+ * - Signal emission for state changes
+ */
+class SessionManager : public QObject {
+    Q_OBJECT
+
+public:
+    explicit SessionManager(QObject* parent = nullptr);
+    ~SessionManager();
+    
+    /**
+     * @brief Set shared CommandSet (for sharing with FlowManager)
+     * @param commandSet Shared CommandSet instance
+     * 
+     * Must be called before start() if you want to share CommandSet.
+     * If not called, SessionManager will create its own CommandSet.
+     */
+    void setCommandSet(std::shared_ptr<Keycard::CommandSet> commandSet);
+    std::shared_ptr<Keycard::CommandSet> commandSet() const { return m_commandSet; }
+
+    // Session lifecycle
+    bool start(bool logEnabled = false, const QString& logFilePath = QString());
+    void stop();
+    bool isStarted() const { return m_started; }
+
+    // Current state
+    SessionState currentState() const { return m_state; }
+    QString currentStateString() const;
+    
+    // Card operations (require Authorized state for most)
+    bool initialize(const QString& pin, const QString& puk, const QString& pairingPassword);
+    bool authorize(const QString& pin);
+    bool changePIN(const QString& newPIN);
+    bool changePUK(const QString& newPUK);
+    bool unblockPIN(const QString& puk, const QString& newPIN);
+    
+    // Key operations
+    QVector<int> generateMnemonic(int length);
+    QString loadMnemonic(const QString& mnemonic, const QString& passphrase);
+    bool factoryReset();
+    
+    // Forward-declare nested types for method signatures
+    struct Metadata;
+    
+    // Metadata operations
+    Metadata getMetadata(bool isMainCommand = true);
+    bool storeMetadata(const QString& name, const QStringList& paths);
+    
+    // Key export
+    struct KeyPair {
+        QString address;
+        QString publicKey;
+        QString privateKey;  // Optional
+        QString chainCode;   // Optional (for extended keys)
+    };
+    
+    struct LoginKeys {
+        KeyPair whisperPrivateKey;
+        KeyPair encryptionPrivateKey;
+    };
+    LoginKeys exportLoginKeys(bool isMainCommand = true);
+    
+    struct RecoverKeys {
+        LoginKeys loginKeys;
+        KeyPair eip1581;
+        KeyPair walletRootKey;
+        KeyPair walletKey;
+        KeyPair masterKey;
+    };
+    RecoverKeys exportRecoverKeys();
+    
+    // Channel access (for Android JNI bridge)
+    Keycard::KeycardChannel* getChannel() { return m_channel.get(); }
+    
+    // Status structures (matching status-keycard-go exactly)
+    struct Wallet {
+        QString path;
+        QString address;
+        QString publicKey;
+    };
+    
+    struct Metadata {
+        QString name;
+        QVector<Wallet> wallets;
+    };
+    
+    struct ApplicationInfoV2 {
+        bool installed;
+        bool initialized;
+        QString instanceUID;
+        QString version;
+        int availableSlots;
+        QString keyUID;
+    };
+    
+    struct ApplicationStatus {
+        int remainingAttemptsPIN;
+        int remainingAttemptsPUK;
+        bool keyInitialized;
+        QString path;
+    };
+    
+    struct Status {
+        QString state;  // State string (e.g., "ready", "authorized")
+        ApplicationInfoV2* keycardInfo;  // Can be null
+        ApplicationStatus* keycardStatus;  // Can be null
+        Metadata* metadata;  // Can be null
+        
+        Status() : keycardInfo(nullptr), keycardStatus(nullptr), metadata(nullptr) {}
+        ~Status() {
+            delete keycardInfo;
+            delete keycardStatus;
+            delete metadata;
+        }
+    };
+    Status getStatus() const;
+    
+    // Error handling
+    QString lastError() const { return m_lastError; }
+
+signals:
+    void stateChanged(SessionState newState, SessionState oldState);
+    void error(const QString& message);
+
+private slots:
+    void onReaderAvailabilityChanged(bool available);
+    void onCardDetected(const QString& uid);
+    void onCardRemoved();
+    void onChannelError(const QString& error);
+
+private:
+    void setState(SessionState newState);
+    void closeSecureChannel();  // Cleanup CommandSet and channel connection
+    void setError(const QString& error);
+    void startCardOperation();
+    void operationCompleted();
+
+    // State
+    SessionState m_state;
+    bool m_started;
+    QString m_lastError;
+    
+    // Keycard components
+    std::shared_ptr<Keycard::KeycardChannel> m_channel;
+    std::shared_ptr<Keycard::CommandSet> m_commandSet;
+    Keycard::ApplicationInfo m_appInfo;
+    Keycard::ApplicationStatus m_appStatus;  // Cached status to avoid redundant GET_STATUS calls
+    Metadata m_metadata;
+    
+    // Monitoring
+    QTimer* m_stateCheckTimer;
+    QString m_currentCardUID;
+    bool m_authorized;
+    
+    // Thread safety - protects all card operations
+    // MUST be recursive to allow exportRecoverKeys() to call exportLoginKeys()
+    mutable QRecursiveMutex m_operationMutex;
+};
+
+} // namespace StatusKeycard
+
