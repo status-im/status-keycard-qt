@@ -127,12 +127,6 @@ void SessionManager::setCommandSet(std::shared_ptr<Keycard::CommandSet> commandS
 
 bool SessionManager::start(bool logEnabled, const QString& logFilePath)
 {
-    if (m_started) {
-        setError("Service already started");
-        qWarning() << "SessionManager: Already started!";
-        return false;
-    }
-
     if (m_channel) {
         qDebug() << "SessionManager: Starting card detection...";
         m_channel->setState(Keycard::ChannelState::WaitingForCard);
@@ -239,6 +233,7 @@ void SessionManager::onCardDetected(const QString& uid)
                 setError("Failed to select applet");
                 setState(SessionState::ConnectionError);
             }, Qt::QueuedConnection);
+            operationCompleted();
             return;
         }
         // Check if card is initialized
@@ -247,6 +242,7 @@ void SessionManager::onCardDetected(const QString& uid)
             QMetaObject::invokeMethod(this, [this]() {
                 setState(SessionState::EmptyKeycard);
             }, Qt::QueuedConnection);
+            operationCompleted();
             return;
         }
 
@@ -256,6 +252,7 @@ void SessionManager::onCardDetected(const QString& uid)
                 SessionState::PairingError :
                 SessionState::NoAvailablePairingSlots);
             }, Qt::QueuedConnection);
+            operationCompleted();
             return;
         }
 
@@ -263,6 +260,7 @@ void SessionManager::onCardDetected(const QString& uid)
             QMetaObject::invokeMethod(this, [this]() {
                 setState(SessionState::ConnectionError);
             }, Qt::QueuedConnection);
+            operationCompleted();
             return;
         }
 

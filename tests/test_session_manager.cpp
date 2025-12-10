@@ -94,8 +94,8 @@ private slots:
         m_manager->start();
         
         bool result = m_manager->start();
-        QVERIFY(!result);
-        QVERIFY(!m_manager->lastError().isEmpty());
+        QVERIFY(result);
+        QVERIFY(m_manager->lastError().isEmpty());
     }
 
     void testStop()
