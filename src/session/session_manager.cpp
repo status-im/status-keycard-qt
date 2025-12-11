@@ -91,19 +91,22 @@ void SessionManager::operationCompleted()
 
 void SessionManager::setCommandSet(std::shared_ptr<Keycard::CommandSet> commandSet)
 {
-    if (m_commandSet != commandSet) {
-        if (m_channel) {
-            qDebug() << "SessionManager::setCommandSet() - CommandSet changed, disconnecting old signals";
-            QObject::disconnect(m_channel.get(), nullptr, this, nullptr);
-        }
-        m_channel.reset();
+    if (m_commandSet == commandSet) {
+        qDebug() << "SessionManager::setCommandSet() - CommandSet not changed";
+        return;
     }
+
     qDebug() << "SessionManager::setCommandSet() - Setting shared CommandSet";
     m_commandSet = commandSet;
 
     if (!m_commandSet) {
         qWarning() << "SessionManager: No command set available";
         return;
+    }
+
+    if (m_channel) {
+        qDebug() << "SessionManager::setCommandSet() - CommandSet changed, disconnecting old signals";
+        QObject::disconnect(m_channel.get(), nullptr, this, nullptr);
     }
 
     m_channel = m_commandSet->channel();
@@ -160,6 +163,8 @@ void SessionManager::stop()
 
 void SessionManager::setState(SessionState newState)
 {
+    qDebug() << "SessionManager::setState() - New state: "<< sessionStateToString(newState);
+    
     if (newState == m_state) {
         return;
     }
@@ -192,29 +197,30 @@ void SessionManager::onCardDetected(const QString& uid)
     qDebug() << "   Thread:" << QThread::currentThread();
     qDebug() << "========================================";
     
-    // iOS: Ignore re-taps of the same card when already Ready/Authorized
-    // This prevents unnecessary secure channel re-establishment while user is at PIN input screen
     if (m_currentCardUID == uid && m_state != SessionState::ConnectionError) {
         qDebug() << "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━";
-        qDebug() << "iOS: Same card re-tapped while already Ready/Authorized";
-        qDebug() << "iOS: Current state:" << sessionStateToString(m_state);
-        qDebug() << "iOS: Ignoring duplicate card detection (already connected)";
+        qDebug() << "SessionManager: Same card re-tapped while already Ready/Authorized";
+        qDebug() << "SessionManager: Current state:" << sessionStateToString(m_state);
+        qDebug() << "SessionManager: Ignoring duplicate card detection (already connected)";
         qDebug() << "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━";
-        return;  // Don't emit signal, don't change state, don't start new secure channel
+        return;
     }
     
     m_currentCardUID = uid;
 
     setState(SessionState::ConnectingCard);
     
-    // iOS: Run secure channel opening in background thread to avoid blocking main thread
-    // This prevents the QEventLoop in transmit() from blocking Qt's event processing
-    // (which would prevent iOS NFC target lost signals from being processed)
     QtConcurrent::run([this]() {
         qDebug() << "SessionManager: Opening secure channel in background thread:" << QThread::currentThread();
         
         // CRITICAL: Serialize card operations to prevent concurrent APDU corruption
         QMutexLocker locker(&m_operationMutex);
+
+        if (m_state != SessionState::ConnectingCard) {
+            qWarning() << "SessionManager: Card detected in state:" << sessionStateToString(m_state);
+            qWarning() << "SessionManager: Initial setup no longer needed";
+            return;
+        }
         
         if (!m_commandSet) {
             qWarning() << "SessionManager: No command set available";
@@ -956,7 +962,6 @@ SessionManager::Metadata SessionManager::getMetadata(bool isMainCommand)
         // Not an error - card might not have metadata yet
         qDebug() << "SessionManager: No metadata on card";
         if (isMainCommand) {
-        operationCompleted();
             operationCompleted();
         }
         return metadata;
