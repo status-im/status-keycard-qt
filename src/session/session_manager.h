@@ -3,6 +3,7 @@
 #include "session_state.h"
 #include <keycard-qt/keycard_channel.h>
 #include <keycard-qt/command_set.h>
+#include <keycard-qt/communication_manager.h>
 #include <QObject>
 #include <QTimer>
 #include <QMutex>
@@ -27,14 +28,15 @@ public:
     ~SessionManager();
     
     /**
-     * @brief Set shared CommandSet (for sharing with FlowManager)
-     * @param commandSet Shared CommandSet instance
+     * @brief Set CommunicationManager
+     * @param commMgr CommunicationManager instance (must be started)
      * 
-     * Must be called before start() if you want to share CommandSet.
-     * If not called, SessionManager will create its own CommandSet.
+     * Must be called before start().
+     * The CommunicationManager should be created and started by the caller
+     * (e.g., RPC service) with the channel and dependencies.
      */
-    void setCommandSet(std::shared_ptr<Keycard::CommandSet> commandSet);
-    std::shared_ptr<Keycard::CommandSet> commandSet() const { return m_commandSet; }
+    void setCommunicationManager(std::shared_ptr<Keycard::CommunicationManager> commMgr);
+    std::shared_ptr<Keycard::CommunicationManager> communicationManager() const { return m_commMgr; }
 
     // Session lifecycle
     bool start(bool logEnabled = false, const QString& logFilePath = QString());
@@ -87,9 +89,6 @@ public:
     };
     RecoverKeys exportRecoverKeys();
     
-    // Channel access (for Android JNI bridge)
-    Keycard::KeycardChannel* getChannel() { return m_channel.get(); }
-    
     // Status structures (matching status-keycard-go exactly)
     struct Wallet {
         QString path;
@@ -141,17 +140,16 @@ signals:
     void error(const QString& message);
 
 private slots:
-    void onReaderAvailabilityChanged(bool available);
-    void onCardDetected(const QString& uid);
+    void onCardInitialized(Keycard::CardInitializationResult result);
     void onCardRemoved();
-    void onChannelError(const QString& error);
 
 private:
     void setState(SessionState newState);
-    void closeSecureChannel();  // Cleanup CommandSet and channel connection
     void setError(const QString& error);
-    void startCardOperation();
-    void operationCompleted();
+    
+    // Helper for exporting keys
+    QByteArray exportKeyInternal(bool derive, bool makeCurrent, const QString& path, uint8_t exportType = 0x00);
+    QByteArray exportKeyExtendedInternal(bool derive, bool makeCurrent, const QString& path);
 
     // State
     SessionState m_state;
@@ -159,8 +157,9 @@ private:
     QString m_lastError;
     
     // Keycard components
-    std::shared_ptr<Keycard::KeycardChannel> m_channel;
-    std::shared_ptr<Keycard::CommandSet> m_commandSet;
+    std::shared_ptr<Keycard::CommunicationManager> m_commMgr;
+    
+    // Cached card state
     Keycard::ApplicationInfo m_appInfo;
     Keycard::ApplicationStatus m_appStatus;  // Cached status to avoid redundant GET_STATUS calls
     Metadata m_metadata;

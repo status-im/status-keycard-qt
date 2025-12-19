@@ -1,6 +1,8 @@
 #include "session_manager.h"
 #include "signal_manager.h"
 #include <keycard-qt/types.h>
+#include <keycard-qt/tlv_utils.h>
+#include <keycard-qt/metadata_utils.h>
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QJsonArray>
@@ -25,16 +27,7 @@ namespace StatusKeycard {
 
 // LEB128 (Little Endian Base 128) encoding
 // Used for encoding wallet path components (matching Go's apdu.WriteLength)
-static void writeLEB128(QByteArray& buf, uint32_t value) {
-    do {
-        uint8_t byte = value & 0x7F;  // Take lower 7 bits
-        value >>= 7;
-        if (value != 0) {
-            byte |= 0x80;  // Set continuation bit if more bytes follow
-        }
-        buf.append(static_cast<char>(byte));
-    } while (value != 0);
-}
+// NOTE: LEB128 utilities moved to metadata_utils.h/cpp for reuse across the codebase
 
 // Derivation paths matching status-keycard-go/internal/const.go
 static const QString PATH_MASTER = "m";
@@ -69,79 +62,56 @@ SessionManager::~SessionManager()
     stop();
 }
 
-void SessionManager::startCardOperation()
-{
-    qDebug() << "SessionManager::startCardOperation() ";
-    auto channel = m_channel.get();
-    if (channel) {
-        QMetaObject::invokeMethod(channel, [channel]() {
-            qDebug() << "SessionManager::startCardOperation() invoke method " << (channel ? "YES" : "NO");
-            channel->setState(Keycard::ChannelState::WaitingForCard);
-        }, Qt::QueuedConnection);
-    }
-}
+// Removed: startCardOperation() and operationCompleted() - not needed with CommunicationManager
 
-void SessionManager::operationCompleted()
+void SessionManager::setCommunicationManager(std::shared_ptr<Keycard::CommunicationManager> commMgr)
 {
-    qDebug() << "SessionManager::operationCompleted()";
-    if (m_channel) {
-        m_channel->setState(Keycard::ChannelState::Idle);
+    if (m_started) {
+        qWarning() << "SessionManager: Cannot set CommunicationManager while started";
+        return;
     }
-}
-
-void SessionManager::setCommandSet(std::shared_ptr<Keycard::CommandSet> commandSet)
-{
-    if (m_commandSet == commandSet) {
-        qDebug() << "SessionManager::setCommandSet() - CommandSet not changed";
+    
+    if (m_commMgr == commMgr) {
+        qDebug() << "SessionManager::setCommunicationManager() - CommunicationManager not changed";
         return;
     }
 
-    qDebug() << "SessionManager::setCommandSet() - Setting shared CommandSet";
-    m_commandSet = commandSet;
-
-    if (!m_commandSet) {
-        qWarning() << "SessionManager: No command set available";
-        return;
-    }
-
-    if (m_channel) {
-        qDebug() << "SessionManager::setCommandSet() - CommandSet changed, disconnecting old signals";
-        QObject::disconnect(m_channel.get(), nullptr, this, nullptr);
-    }
-
-    m_channel = m_commandSet->channel();
-    if (!m_channel) {
-        qWarning() << "SessionManager: No channel set";
-        return;
-    }
-
-    // Connect signals
-    connect(m_channel.get(), &Keycard::KeycardChannel::readerAvailabilityChanged,
-            this, &SessionManager::onReaderAvailabilityChanged);
-    connect(m_channel.get(), &Keycard::KeycardChannel::targetDetected,
-            this, &SessionManager::onCardDetected);
-    connect(m_channel.get(), &Keycard::KeycardChannel::targetLost,
-            this, &SessionManager::onCardRemoved);
-    connect(m_channel.get(), &Keycard::KeycardChannel::error,
-            this, [](const QString& errorMsg) {
-        qWarning() << "SessionManager: KeycardChannel error:" << errorMsg;
-    });
+    qDebug() << "SessionManager::setCommunicationManager() - Setting CommunicationManager";
+    m_commMgr = commMgr;
 }
 
 bool SessionManager::start(bool logEnabled, const QString& logFilePath)
 {
-    if (m_channel) {
-        qDebug() << "SessionManager: Starting card detection...";
-        m_channel->setState(Keycard::ChannelState::WaitingForCard);
-        // Transition to WaitingForCard state
-        setState(SessionState::WaitingForCard);
-    } else {
-        // No channel available - set to waiting for reader
-        setState(SessionState::WaitingForReader);
+    if (!m_commMgr) {
+        qWarning() << "SessionManager: No CommunicationManager available";
+        qWarning() << "SessionManager: Call setCommunicationManager() before start()";
+        return false;
     }
+    
+    qDebug() << "SessionManager: Starting with CommunicationManager";
 
+    // Disconnect any previous connections
+    QObject::disconnect(m_commMgr.get(), nullptr, this, nullptr);
+    
+    // Connect to CommunicationManager signals
+    connect(m_commMgr.get(), &Keycard::CommunicationManager::cardInitialized,
+            this, &SessionManager::onCardInitialized,
+            Qt::QueuedConnection);
+    
+    connect(m_commMgr.get(), &Keycard::CommunicationManager::cardLost,
+            this, &SessionManager::onCardRemoved,
+            Qt::QueuedConnection);
+    
+    // Start card detection (CommunicationManager should already be init'd by caller)
+    if (!m_commMgr->startDetection()) {
+        qWarning() << "SessionManager: Failed to start card detection";
+        return false;
+    }
+    
+    setState(SessionState::WaitingForCard);
     m_started = true;
-
+    
+    qDebug() << "SessionManager: Started successfully, monitoring for cards";
     return true;
 }
 
@@ -151,14 +121,18 @@ void SessionManager::stop()
         return;
     }
     
+    qDebug() << "SessionManager: Stopping...";
+    
+    // Stop card detection
+    if (m_commMgr) {
+        m_commMgr->stopDetection();
+    }
+    
     m_started = false;
     m_currentCardUID.clear();
-
-    if (m_channel) {
-        m_channel->setState(Keycard::ChannelState::Idle);
-    }
     setState(SessionState::UnknownReaderState);
-    qDebug() << "SessionManager: Stopped";
+    
+    qDebug() << "SessionManager: Stopped (detection paused, can restart with start())";
 }
 
 void SessionManager::setState(SessionState newState)
@@ -176,109 +150,32 @@ void SessionManager::setState(SessionState newState)
     emit stateChanged(newState, oldState);
 }
 
-void SessionManager::onReaderAvailabilityChanged(bool available)
-{
-    qDebug() << "SessionManager: Reader availability changed:" << (available ? "available" : "not available");
-    
-    if (available) {
-        if (m_state == SessionState::UnknownReaderState || m_state == SessionState::WaitingForReader) {
-            setState(SessionState::WaitingForCard);
-            m_channel->setState(Keycard::ChannelState::WaitingForCard);
-        }
-    } else {
-        setState(SessionState::WaitingForReader);
-    }
-}
-
-void SessionManager::onCardDetected(const QString& uid)
+void SessionManager::onCardInitialized(Keycard::CardInitializationResult result)
 {
     qDebug() << "========================================";
-    qDebug() << " SessionManager: CARD DETECTED! UID:" << uid;
-    qDebug() << "   Thread:" << QThread::currentThread();
+    qDebug() << "SessionManager: CARD INITIALIZED";
     qDebug() << "========================================";
     
-    if (m_currentCardUID == uid && m_state != SessionState::ConnectionError) {
-        qDebug() << "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━";
-        qDebug() << "SessionManager: Same card re-tapped while already Ready/Authorized";
-        qDebug() << "SessionManager: Current state:" << sessionStateToString(m_state);
-        qDebug() << "SessionManager: Ignoring duplicate card detection (already connected)";
-        qDebug() << "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━";
+    if (!result.success) {
+        qWarning() << "SessionManager: Card initialization failed:" << result.error;
+        setError(result.error);
+        setState(SessionState::ConnectionError);
         return;
     }
     
-    m_currentCardUID = uid;
-
-    setState(SessionState::ConnectingCard);
+    // Update cached state from CommunicationManager
+    m_currentCardUID = result.uid;
+    m_appInfo = result.appInfo;
+    m_appStatus = result.appStatus;
     
-    QtConcurrent::run([this]() {
-        qDebug() << "SessionManager: Opening secure channel in background thread:" << QThread::currentThread();
-        
-        // CRITICAL: Serialize card operations to prevent concurrent APDU corruption
-        QMutexLocker locker(&m_operationMutex);
-
-        if (m_state != SessionState::ConnectingCard) {
-            qWarning() << "SessionManager: Card detected in state:" << sessionStateToString(m_state);
-            qWarning() << "SessionManager: Initial setup no longer needed";
-            return;
-        }
-        
-        if (!m_commandSet) {
-            qWarning() << "SessionManager: No command set available";
-            QMetaObject::invokeMethod(this, [this]() {
-                setError("Failed to create command set");
-                setState(SessionState::ConnectionError);
-            }, Qt::QueuedConnection);
-            return;
-        }
-        // Select applet (doesn't require pairing/secure channel)
-        m_appInfo = m_commandSet->select();
-        // Check if select succeeded: initialized cards have instanceUID, pre-initialized cards have secureChannelPublicKey
-        if (m_appInfo.instanceUID.isEmpty() && m_appInfo.secureChannelPublicKey.isEmpty()) {
-            qWarning() << "SessionManager: Failed to select applet";
-            QMetaObject::invokeMethod(this, [this]() {
-                setError("Failed to select applet");
-                setState(SessionState::ConnectionError);
-            }, Qt::QueuedConnection);
-            operationCompleted();
-            return;
-        }
-        // Check if card is initialized
-        if (!m_appInfo.initialized) {
-            qDebug() << "SessionManager: Card is empty (not initialized)";
-            QMetaObject::invokeMethod(this, [this]() {
-                setState(SessionState::EmptyKeycard);
-            }, Qt::QueuedConnection);
-            operationCompleted();
-            return;
-        }
-
-        if (!m_commandSet->ensurePairing()) {
-            QMetaObject::invokeMethod(this, [this]() {
-                setState(m_appInfo.availableSlots > 0 ? 
-                SessionState::PairingError :
-                SessionState::NoAvailablePairingSlots);
-            }, Qt::QueuedConnection);
-            operationCompleted();
-            return;
-        }
-
-        if (!m_commandSet->ensureSecureChannel()) {
-            QMetaObject::invokeMethod(this, [this]() {
-                setState(SessionState::ConnectionError);
-            }, Qt::QueuedConnection);
-            operationCompleted();
-            return;
-        }
-
-        m_appStatus = m_commandSet->cachedApplicationStatus();
-        m_metadata = getMetadata(false);
-
-        QMetaObject::invokeMethod(this, [this]() {
-            setState(SessionState::Ready);
-        }, Qt::QueuedConnection);
-
-        operationCompleted();
-    });
+    // Determine state based on card status
+    if (!result.appInfo.initialized) {
+        qDebug() << "SessionManager: Card is empty (not initialized)";
+        setState(SessionState::EmptyKeycard);
+    } else {
+        qDebug() << "SessionManager: Card is ready";
+        setState(SessionState::Ready);
+    }
 }
 
 void SessionManager::onCardRemoved()
@@ -286,8 +183,9 @@ void SessionManager::onCardRemoved()
     qDebug() << "========================================";
     qDebug() << "SessionManager: CARD REMOVED";
     qDebug() << "========================================";
+    
 #if defined(Q_OS_ANDROID) || defined(Q_OS_IOS)
-    qDebug() << "Ignoring card removal";
+    qDebug() << "Ignoring card removal on mobile";
     return;
 #else
     m_currentCardUID.clear();
@@ -296,13 +194,6 @@ void SessionManager::onCardRemoved()
         setState(SessionState::WaitingForCard);
     }
 #endif
-}
-
-void SessionManager::onChannelError(const QString& error)
-{
-    qWarning() << "SessionManager: Channel error:" << error;
-    setError(error);
-    emit this->error(error);
 }
 
 void SessionManager::setError(const QString& error)
@@ -355,137 +246,133 @@ bool SessionManager::initialize(const QString& pin, const QString& puk, const QS
 {
     qDebug() << "SessionManager::initialize()";
     QMutexLocker locker(&m_operationMutex);
-
     
-    if (!m_commandSet) {
-        setError("No command set available (no card connected)");
+    if (!m_commMgr) {
+        setError("No communication manager available");
         return false;
     }
-    QString password = pairingPassword.isEmpty() ? "KeycardDefaultPairing" : pairingPassword;
-    Keycard::Secrets secrets(pin, puk, password);
-    bool result = m_commandSet->init(secrets);
-    if (!result) {
-        setError(m_commandSet->lastError());
+    
+    auto cmd = std::make_unique<Keycard::InitCommand>(pin, puk, pairingPassword);
+    Keycard::CommandResult result = m_commMgr->executeCommandSync(std::move(cmd), 60000);
+    
+    if (result.success) {
+        m_currentCardUID.clear();
+        m_appInfo = m_commMgr->applicationInfo();
+        m_appStatus = m_commMgr->applicationStatus();
+        setState(SessionState::Ready);
+        return true;
+    } else {
+        setError(result.error);
         return false;
     }
-
-    m_currentCardUID.clear();
-    m_appStatus = m_commandSet->cachedApplicationStatus();
-    m_appInfo = m_commandSet->select(false);
-    setState(SessionState::Ready);
-    return true;
 }
 
 bool SessionManager::authorize(const QString& pin)
 {
-    qDebug() << "SessionManager::authorize() - START - Thread:" << QThread::currentThread();
+    qDebug() << "SessionManager::authorize() - Thread:" << QThread::currentThread();
     
-    // CRITICAL: Serialize card operations to prevent concurrent APDU corruption
-    QMutexLocker locker(&m_operationMutex);
+    if (!m_commMgr) {
+        setError("No communication manager available");
+        return false;
+    }
     
     if (m_state != SessionState::Ready) {
         setError("Card not ready (current state: " + currentStateString() + ")");
         return false;
     }
     
-    if (!m_commandSet) {
-        setError("No command set available (no card connected)");
-        return false;
-    }
-
-    bool result = m_commandSet->verifyPIN(pin);
-    m_appStatus = m_commandSet->cachedApplicationStatus();
+    auto cmd = std::make_unique<Keycard::VerifyPINCommand>(pin);
+    Keycard::CommandResult result = m_commMgr->executeCommandSync(std::move(cmd), 30000);
     
-    if (!result) {
-        setError(m_commandSet->lastError());
-        int remaining = m_commandSet->remainingPINAttempts();
-        if (remaining >= 0) {
-            setError(QString("Wrong PIN (%1 attempts remaining)").arg(remaining));
-        }
+    if (result.success) {
+        // Update status from result
+        QVariantMap data = result.data.toMap();
+        m_appStatus.pinRetryCount = data["remainingAttempts"].toInt();
         
-        operationCompleted();
+        setState(SessionState::Authorized);
+        return true;
+    } else {
+        setError(result.error);
         return false;
     }
-    
-    if (m_appStatus.pinRetryCount >= 0) {
-        qDebug() << "SessionManager: Application status updated after authorization";
-        qDebug() << "  PIN retry count:" << m_appStatus.pinRetryCount;
-        qDebug() << "  PUK retry count:" << m_appStatus.pukRetryCount;
-        qDebug() << "  Key initialized:" << m_appStatus.keyInitialized;
-    } else {
-        qWarning() << "SessionManager: Failed to update application status after PIN verification";
-        qWarning() << "SessionManager: This may cause subsequent operations to fail";
-    }
-    
-    setState(SessionState::Authorized);
-    operationCompleted();
-    return true;
 }
 
 bool SessionManager::changePIN(const QString& newPIN)
 {
     QMutexLocker locker(&m_operationMutex);
 
+    if (!m_commMgr) {
+        setError("No communication manager available");
+        return false;
+    }
+
     if (m_state != SessionState::Authorized) {
         setError("Not authorized");
         return false;
     }
     
-    bool result = m_commandSet->changePIN(newPIN);
-    if (!result) {
-        setError(m_commandSet->lastError());
+    auto cmd = std::make_unique<Keycard::ChangePINCommand>(newPIN);
+    Keycard::CommandResult result = m_commMgr->executeCommandSync(std::move(cmd), 30000);
+    
+    if (result.success) {
+        qDebug() << "SessionManager: PIN changed";
+        return true;
+    } else {
+        setError(result.error);
         return false;
     }
-    
-    qDebug() << "SessionManager: PIN changed";
-    
-    operationCompleted();
-    
-    return true;
 }
 
 bool SessionManager::changePUK(const QString& newPUK)
 {
     QMutexLocker locker(&m_operationMutex);
 
+    if (!m_commMgr) {
+        setError("No communication manager available");
+        return false;
+    }
+
     if (m_state != SessionState::Authorized) {
         setError("Not authorized");
         return false;
     }
     
-    bool result = m_commandSet->changePUK(newPUK);
-    if (!result) {
-        setError(m_commandSet->lastError());
+    auto cmd = std::make_unique<Keycard::ChangePUKCommand>(newPUK);
+    Keycard::CommandResult result = m_commMgr->executeCommandSync(std::move(cmd), 30000);
+    
+    if (result.success) {
+        qDebug() << "SessionManager: PUK changed";
+        return true;
+    } else {
+        setError(result.error);
         return false;
     }
-    
-    qDebug() << "SessionManager: PUK changed";
-    
-    operationCompleted();
-    
-    return true;
 }
 
 bool SessionManager::unblockPIN(const QString& puk, const QString& newPIN)
 {
     QMutexLocker locker(&m_operationMutex);
 
+    if (!m_commMgr) {
+        setError("No communication manager available");
+        return false;
+    }
+
     if (m_state != SessionState::Ready && m_state != SessionState::Authorized) {
         setError("Card not ready");
         return false;
     }
     
-    bool result = m_commandSet->unblockPIN(puk, newPIN);
-    if (!result) {
-        setError(m_commandSet->lastError());
+    auto cmd = std::make_unique<Keycard::UnblockPINCommand>(puk, newPIN);
+    Keycard::CommandResult result = m_commMgr->executeCommandSync(std::move(cmd), 30000);
+    
+    if (result.success) {
+        qDebug() << "SessionManager: PIN unblocked";
+        return true;
+    } else {
+        setError(result.error);
         return false;
     }
-    
-    qDebug() << "SessionManager: PIN unblocked";
-    
-    operationCompleted();
-    
-    return true;
 }
 
 // Key Operations
@@ -494,8 +381,8 @@ QVector<int> SessionManager::generateMnemonic(int length)
 {
     QMutexLocker locker(&m_operationMutex);
 
-    if (m_state != SessionState::Authorized) {
-        setError("Not authorized");
+    if (!m_commMgr) {
+        setError("No communication manager available");
         return QVector<int>();
     }
 
@@ -505,22 +392,28 @@ QVector<int> SessionManager::generateMnemonic(int length)
     else if (length == 21) checksumSize = 7;
     else if (length == 24) checksumSize = 8;
     
-    QVector<int> indexes = m_commandSet->generateMnemonic(checksumSize);
-    if (indexes.isEmpty()) {
-        setError(m_commandSet->lastError());
+    auto cmd = std::make_unique<Keycard::GenerateMnemonicCommand>(checksumSize);
+    Keycard::CommandResult result = m_commMgr->executeCommandSync(std::move(cmd), 30000);
+    
+    if (result.success) {
+        QVariantList list = result.data.toList();
+        QVector<int> indexes;
+        for (const QVariant& v : list) {
+            indexes.append(v.toInt());
+        }
+        return indexes;
+    } else {
+        setError(result.error);
+        return QVector<int>();
     }
-
-    operationCompleted();
-        
-    return indexes;
 }
 
 QString SessionManager::loadMnemonic(const QString& mnemonic, const QString& passphrase)
 {
     QMutexLocker locker(&m_operationMutex);
     
-    if (!m_commandSet) {
-        setError("No command set available");
+    if (!m_commMgr) {
+        setError("No communication manager available");
         return QString();
     }
     
@@ -540,7 +433,7 @@ QString SessionManager::loadMnemonic(const QString& mnemonic, const QString& pas
     
     // Use OpenSSL's PBKDF2
     QByteArray seed(64, 0);
-    int result = PKCS5_PBKDF2_HMAC(
+    int pbkdf2Result = PKCS5_PBKDF2_HMAC(
         mnemonicBytes.constData(), mnemonicBytes.size(),
         reinterpret_cast<const unsigned char*>(saltBytes.constData()), saltBytes.size(),
         2048,  // iterations
@@ -549,23 +442,31 @@ QString SessionManager::loadMnemonic(const QString& mnemonic, const QString& pas
         reinterpret_cast<unsigned char*>(seed.data())
     );
     
-    if (result != 1) {
+    if (pbkdf2Result != 1) {
         setError("PBKDF2 derivation failed");
         return QString();
     }
     
     // Load seed onto keycard
     qDebug() << "SessionManager: Loading seed onto keycard (" << seed.size() << " bytes)";
-    QByteArray keyUID = m_commandSet->loadSeed(seed);
     
-    if (keyUID.isEmpty()) {
-        setError(QString("Failed to load seed: %1").arg(m_commandSet->lastError()));
+    if (!m_commMgr) {
+        setError("No communication manager available");
         return QString();
     }
     
-    qDebug() << "SessionManager: Seed loaded successfully, keyUID:" << keyUID.toHex();
+    auto cmd = std::make_unique<Keycard::LoadSeedCommand>(seed);
+    Keycard::CommandResult result = m_commMgr->executeCommandSync(std::move(cmd), 60000);
     
-    operationCompleted();
+    if (!result.success) {
+        setError(QString("Failed to load seed: %1").arg(result.error));
+        return QString();
+    }
+    
+    QVariantMap data = result.data.toMap();
+    QByteArray keyUID = QByteArray::fromHex(data["keyUID"].toString().toUtf8());
+    
+    qDebug() << "SessionManager: Seed loaded successfully, keyUID:" << keyUID.toHex();
     
     return QString("0x") + keyUID.toHex();
 }
@@ -574,26 +475,28 @@ bool SessionManager::factoryReset()
 {
     QMutexLocker locker(&m_operationMutex);
     
-    if (!m_commandSet) {
-        setError("No command set available (no card connected)");
+    if (!m_commMgr) {
+        setError("No communication manager available");
         return false;
     }
     
-    bool result = m_commandSet->factoryReset();
-    if (!result) {
-        setError(m_commandSet->lastError());
+    setState(SessionState::FactoryResetting);
+    
+    auto cmd = std::make_unique<Keycard::FactoryResetCommand>();
+    Keycard::CommandResult result = m_commMgr->executeCommandSync(std::move(cmd), 60000);
+    
+    if (!result.success) {
+        setError(result.error);
         return false;
     }
     
     qDebug() << "SessionManager: Factory reset complete";
-
-    m_appInfo = m_commandSet->select(true);
-
+    
+    m_appInfo = m_commMgr->applicationInfo();
     m_currentCardUID.clear();
-    m_appStatus = m_commandSet->cachedApplicationStatus();
+    m_appStatus = m_commMgr->applicationStatus();
     setState(SessionState::EmptyKeycard);
-    operationCompleted();
-
+    
     return true;
 }
 
@@ -602,79 +505,8 @@ bool SessionManager::factoryReset()
 // to avoid forward declaration errors
 
 // Key Export
-
-// BER-TLV parser for exported keys (matching keycard-go implementation)
-static quint32 parseTlvLength(const QByteArray& data, int& offset) {
-    if (offset >= data.size()) {
-        return 0;
-    }
-    
-    quint8 firstByte = static_cast<quint8>(data[offset]);
-    offset++;
-    
-    // Short form: length < 128 (0x80)
-    if (firstByte < 0x80) {
-        return firstByte;
-    }
-    
-    // Long form: first byte = 0x80 + number of length bytes
-    if (firstByte == 0x80) {
-        qWarning() << "Unsupported indefinite length (0x80)";
-        return 0;
-    }
-    
-    int lengthBytes = firstByte - 0x80;
-    if (lengthBytes > 4 || offset + lengthBytes > data.size()) {
-        qWarning() << "Invalid length encoding";
-        return 0;
-    }
-    
-    // Read length bytes (big-endian)
-    quint32 length = 0;
-    for (int i = 0; i < lengthBytes; i++) {
-        length = (length << 8) | static_cast<quint8>(data[offset]);
-        offset++;
-    }
-    
-    return length;
-}
-
-static QByteArray findTlvTag(const QByteArray& data, uint8_t targetTag) {
-    int offset = 0;
-    
-    while (offset < data.size()) {
-        // Parse tag (we only support single-byte tags for now)
-        if (offset >= data.size()) {
-            break;
-        }
-        
-        uint8_t tag = static_cast<uint8_t>(data[offset]);
-        offset++;
-        
-        // Parse length (supports multi-byte lengths)
-        quint32 length = parseTlvLength(data, offset);
-        if (length == 0 && offset >= data.size()) {
-            break;
-        }
-        
-        // Check if we have enough data
-        if (offset + length > data.size()) {
-            qWarning() << "TLV length exceeds data size. Tag:" << QString("0x%1").arg(tag, 2, 16, QChar('0'))
-                      << "Length:" << length << "Remaining:" << (data.size() - offset);
-            break;
-        }
-        
-        // Found the target tag
-        if (tag == targetTag) {
-            return data.mid(offset, length);
-        }
-        
-        // Skip to next tag
-        offset += length;
-    }
-    
-    return QByteArray();
-}
+// NOTE: TLV parsing functions moved to tlv_utils.h/cpp
+// All TLV operations now use Keycard::TLV:: utilities
 
 // Compute Ethereum address from public key using Qt's QCryptographicHash
 static QString publicKeyToAddress(const QByteArray& pubKey) {
@@ -756,8 +588,8 @@ static SessionManager::KeyPair parseExportedKey(const QByteArray& data) {
     qDebug() << "parseExportedKey: Received" << data.size() << "bytes:";
     qDebug() << "parseExportedKey: Hex dump:" << data.toHex();
     
-    // Find template tag 0xA1
-    QByteArray template_ = findTlvTag(data, 0xA1);
+    // Find template tag 0xA1 using common TLV utility
+    QByteArray template_ = Keycard::TLV::findTag(data, 0xA1);
     if (template_.isEmpty()) {
         qWarning() << "Failed to find template tag 0xA1 in exported key";
         qWarning() << "Raw data size:" << data.size() << "bytes";
@@ -766,10 +598,10 @@ static SessionManager::KeyPair parseExportedKey(const QByteArray& data) {
     }
     
     // Find public key (0x80)
-    QByteArray pubKey = findTlvTag(template_, 0x80);
+    QByteArray pubKey = Keycard::TLV::findTag(template_, 0x80);
     
     // Find private key (0x81) if available
-    QByteArray privKey = findTlvTag(template_, 0x81);
+    QByteArray privKey = Keycard::TLV::findTag(template_, 0x81);
     if (!privKey.isEmpty()) {
         keyPair.privateKey = privKey.toHex();
     }
@@ -792,12 +624,51 @@ static SessionManager::KeyPair parseExportedKey(const QByteArray& data) {
     }
     
     // Find chain code (0x82) if available
-    QByteArray chainCode = findTlvTag(template_, 0x82);
+    QByteArray chainCode = Keycard::TLV::findTag(template_, 0x82);
     if (!chainCode.isEmpty()) {
         keyPair.chainCode = chainCode.toHex();
     }
     
     return keyPair;
+}
+
+// Helper methods for exporting keys
+QByteArray SessionManager::exportKeyInternal(bool derive, bool makeCurrent, const QString& path, uint8_t exportType)
+{
+    if (!m_commMgr) {
+        setError("No communication manager available");
+        return QByteArray();
+    }
+    
+    auto cmd = std::make_unique<Keycard::ExportKeyCommand>(derive, makeCurrent, path, exportType);
+    Keycard::CommandResult result = m_commMgr->executeCommandSync(std::move(cmd), 30000);
+    
+    if (!result.success) {
+        setError(result.error);
+        return QByteArray();
+    }
+    
+    QVariantMap data = result.data.toMap();
+    return data["keyData"].toByteArray();
+}
+
+QByteArray SessionManager::exportKeyExtendedInternal(bool derive, bool makeCurrent, const QString& path)
+{
+    if (!m_commMgr) {
+        setError("No communication manager available");
+        return QByteArray();
+    }
+    
+    auto cmd = std::make_unique<Keycard::ExportKeyExtendedCommand>(derive, makeCurrent, path);
+    Keycard::CommandResult result = m_commMgr->executeCommandSync(std::move(cmd), 30000);
+    
+    if (!result.success) {
+        setError(result.error);
+        return QByteArray();
+    }
+    
+    QVariantMap data = result.data.toMap();
+    return data["keyData"].toByteArray();
 }
 
 SessionManager::LoginKeys SessionManager::exportLoginKeys(bool isMainCommand)
@@ -815,16 +686,15 @@ SessionManager::LoginKeys SessionManager::exportLoginKeys(bool isMainCommand)
         return keys;
     }
     
-    if (!m_commandSet) {
-        setError("No command set available");
+    if (!m_commMgr) {
+        setError("No communication manager available");
         return keys;
     }
 
     qDebug() << "SessionManager: Exporting whisper key from path:" << PATH_WHISPER;
-    QByteArray whisperData = m_commandSet->exportKey(true, true, PATH_WHISPER, Keycard::APDU::P2ExportKeyPrivateAndPublic);
+    QByteArray whisperData = exportKeyInternal(true, true, PATH_WHISPER, Keycard::APDU::P2ExportKeyPrivateAndPublic);
     if (whisperData.isEmpty()) {
-        setError(QString("Failed to export whisper key: %1").arg(m_commandSet->lastError()));
-        operationCompleted();
+        setError(QString("Failed to export whisper key: %1").arg(m_lastError));
         return keys;
     }
     qDebug() << "SessionManager: Whisper key data size:" << whisperData.size();
@@ -833,10 +703,9 @@ SessionManager::LoginKeys SessionManager::exportLoginKeys(bool isMainCommand)
     // Export encryption private key
     // Now we can use makeCurrent=false since the whisper export already set the card state
     qDebug() << "SessionManager: Exporting encryption key from path:" << PATH_ENCRYPTION;
-    QByteArray encryptionData = m_commandSet->exportKey(true, false, PATH_ENCRYPTION, Keycard::APDU::P2ExportKeyPrivateAndPublic);
+    QByteArray encryptionData = exportKeyInternal(true, false, PATH_ENCRYPTION, Keycard::APDU::P2ExportKeyPrivateAndPublic);
     if (encryptionData.isEmpty()) {
-        setError(QString("Failed to export encryption key: %1").arg(m_commandSet->lastError()));
-        operationCompleted();
+        setError(QString("Failed to export encryption key: %1").arg(m_lastError));
         return keys;
     }
     qDebug() << "SessionManager: Encryption key data size:" << encryptionData.size();
@@ -844,15 +713,12 @@ SessionManager::LoginKeys SessionManager::exportLoginKeys(bool isMainCommand)
     
     qDebug() << "SessionManager: Login keys exported successfully";
     
-    if (isMainCommand) {
-        operationCompleted();
-    }
     return keys;
 }
 
 SessionManager::RecoverKeys SessionManager::exportRecoverKeys()
 {
-    // CRITICAL: Serialize card operations to prevent concurrent APDU corruption
+    // Serialize card operations to prevent concurrent APDU corruption
     QMutexLocker locker(&m_operationMutex);
     
     // Clear any previous error
@@ -865,8 +731,8 @@ SessionManager::RecoverKeys SessionManager::exportRecoverKeys()
         return keys;
     }
     
-    if (!m_commandSet) {
-        setError("No command set available");
+    if (!m_commMgr) {
+        setError("No communication manager available");
         return keys;
     }
     
@@ -879,10 +745,9 @@ SessionManager::RecoverKeys SessionManager::exportRecoverKeys()
     }
     
     // Export EIP1581 key (public only)
-    QByteArray eip1581Data = m_commandSet->exportKey(true, false, PATH_EIP1581);
+    QByteArray eip1581Data = exportKeyInternal(true, false, PATH_EIP1581);
     if (eip1581Data.isEmpty()) {
-        setError(QString("Failed to export EIP1581 key: %1").arg(m_commandSet->lastError()));
-        operationCompleted();
+        setError(QString("Failed to export EIP1581 key: %1").arg(m_lastError));
         return keys;
     }
     keys.eip1581 = parseExportedKey(eip1581Data);
@@ -891,37 +756,32 @@ SessionManager::RecoverKeys SessionManager::exportRecoverKeys()
     // Check if card supports extended keys (version >= 3.1)
     bool supportsExtended = m_appInfo.appVersion >= 3 && m_appInfo.appVersionMinor >= 1;
     QByteArray walletRootData = supportsExtended ?
-        m_commandSet->exportKeyExtended(true, false, PATH_WALLET_ROOT) :
-        m_commandSet->exportKey(true, false, PATH_WALLET_ROOT);
+        exportKeyExtendedInternal(true, false, PATH_WALLET_ROOT) :
+        exportKeyInternal(true, false, PATH_WALLET_ROOT);
     
     if (walletRootData.isEmpty()) {
-        setError(QString("Failed to export wallet root key: %1").arg(m_commandSet->lastError()));
-        operationCompleted();
+        setError(QString("Failed to export wallet root key: %1").arg(m_lastError));
         return keys;
     }
     keys.walletRootKey = parseExportedKey(walletRootData);
     
     // Export wallet key (public only)
-    QByteArray walletData = m_commandSet->exportKey(true, false, PATH_WALLET);
+    QByteArray walletData = exportKeyInternal(true, false, PATH_WALLET);
     if (walletData.isEmpty()) {
-        setError(QString("Failed to export wallet key: %1").arg(m_commandSet->lastError()));
-        operationCompleted();
+        setError(QString("Failed to export wallet key: %1").arg(m_lastError));
         return keys;
     }
     keys.walletKey = parseExportedKey(walletData);
     
     // Export master key (public only, makeCurrent=true for compatibility)
-    QByteArray masterData = m_commandSet->exportKey(true, true, PATH_MASTER);
+    QByteArray masterData = exportKeyInternal(true, true, PATH_MASTER);
     if (masterData.isEmpty()) {
-        setError(QString("Failed to export master key: %1").arg(m_commandSet->lastError()));
-        operationCompleted();
+        setError(QString("Failed to export master key: %1").arg(m_lastError));
         return keys;
     }
     keys.masterKey = parseExportedKey(masterData);
     
     qDebug() << "SessionManager: Recover keys exported successfully";
-    
-    operationCompleted();
     
     return keys;
 }
@@ -935,15 +795,14 @@ SessionManager::Metadata SessionManager::getMetadata(bool isMainCommand)
 
     Metadata metadata;
 
-    
-    if (!m_commandSet) {
-        setError("No command set available");
+    if (!m_commMgr) {
+        setError("No communication manager available");
         return metadata;
     }
     
     // Get metadata from card (matching status-keycard-go GetMetadata)
     qDebug() << "SessionManager: Getting metadata from card";
-    QByteArray metadataData = m_commandSet->getData(Keycard::APDU::P1StoreDataPublic);  // 0x00
+    QByteArray metadataData = m_commMgr->getDataFromCard(Keycard::APDU::P1StoreDataPublic);  // 0x00
     
     // Check if data looks like a status word (error response)
     if (metadataData.size() == 2) {
@@ -951,9 +810,6 @@ SessionManager::Metadata SessionManager::getMetadata(bool isMainCommand)
         if (sw != 0x9000) {  // Not success
             qDebug() << "SessionManager: Card returned status word:" << QString("0x%1").arg(sw, 4, 16, QChar('0'));
             qDebug() << "SessionManager: No metadata on card (error or empty)";
-            if (isMainCommand) {
-                operationCompleted();
-            }
             return metadata;
         }
     }
@@ -961,9 +817,6 @@ SessionManager::Metadata SessionManager::getMetadata(bool isMainCommand)
     if (metadataData.isEmpty()) {
         // Not an error - card might not have metadata yet
         qDebug() << "SessionManager: No metadata on card";
-        if (isMainCommand) {
-            operationCompleted();
-        }
         return metadata;
     }
     
@@ -976,9 +829,6 @@ SessionManager::Metadata SessionManager::getMetadata(bool isMainCommand)
     int offset = 0;
     if (offset >= metadataData.size()) {
         qDebug() << "SessionManager: Metadata too short";
-        if (isMainCommand) {
-            operationCompleted();
-        }
         return metadata;
     }
     
@@ -991,9 +841,6 @@ SessionManager::Metadata SessionManager::getMetadata(bool isMainCommand)
     
     if (version != 1) {
         qWarning() << "SessionManager: Invalid metadata version:" << version;
-        if (isMainCommand) {
-            operationCompleted();
-        }
         return metadata;
     }
     
@@ -1001,7 +848,6 @@ SessionManager::Metadata SessionManager::getMetadata(bool isMainCommand)
     if (namelen > 0) {
         if (offset + namelen > metadataData.size()) {
             qWarning() << "SessionManager: Metadata too short for name";
-            operationCompleted();
             return metadata;
         }
         QByteArray nameData = metadataData.mid(offset, namelen);
@@ -1049,10 +895,6 @@ SessionManager::Metadata SessionManager::getMetadata(bool isMainCommand)
     qDebug() << "SessionManager: Metadata retrieved - name:" << metadata.name
              << "wallets:" << metadata.wallets.size();
     
-    if (isMainCommand) {
-        operationCompleted();
-    }
-    
     return metadata;
 }
 
@@ -1066,82 +908,18 @@ bool SessionManager::storeMetadata(const QString& name, const QStringList& paths
         return false;
     }
     
-    if (!m_commandSet) {
-        setError("No command set available");
+    if (!m_commMgr) {
+        setError("No communication manager available");
         return false;
     }
     
-    qDebug() << "SessionManager: Storing metadata - name:" << name << "paths:" << paths.size();
+    // Encode metadata using common utility
+    QString errorMsg;
+    QByteArray metadata = Keycard::MetadataEncoding::encode(name, paths, errorMsg);
     
-    // Parse paths to extract last component (matching Go implementation)
-    // All paths must start with PATH_WALLET_ROOT
-    QVector<uint32_t> pathComponents;
-    for (const QString& path : paths) {
-        if (!path.startsWith(PATH_WALLET_ROOT)) {
-            setError(QString("Path '%1' does not start with wallet root path '%2'")
-                    .arg(path).arg(PATH_WALLET_ROOT));
-            return false;
-        }
-        
-        // Extract last component (after last '/')
-        QStringList parts = path.split('/');
-        if (parts.isEmpty()) {
-            setError(QString("Invalid path format: %1").arg(path));
-            return false;
-        }
-        
-        bool ok;
-        uint32_t component = parts.last().toUInt(&ok);
-        if (!ok) {
-            setError(QString("Invalid path component: %1").arg(parts.last()));
-            return false;
-        }
-        
-        pathComponents.append(component);
-    }
-    
-    // Sort path components (Go keeps them ordered)
-    std::sort(pathComponents.begin(), pathComponents.end());
-    
-    // Build metadata in Go's custom binary format (matching types/metadata.go Serialize())
-    // Format: [version+namelen][name][start/count pairs in LEB128]
-    // - Byte 0: 0x20 | namelen (version=1 in top 3 bits, name length in bottom 5 bits)
-    // - Bytes 1..namelen: card name (UTF-8)
-    // - Remaining: LEB128-encoded start/count pairs for consecutive wallet paths
-    QByteArray metadata;
-    
-    QByteArray nameBytes = name.toUtf8();
-    if (nameBytes.size() > 20) {
-        setError("Card name exceeds 20 characters");
+    if (metadata.isEmpty()) {
+        setError(errorMsg);
         return false;
-    }
-    
-    uint8_t header = 0x20 | static_cast<uint8_t>(nameBytes.size());  // Version 1, name length
-    metadata.append(static_cast<char>(header));
-    metadata.append(nameBytes);
-    
-    // Encode wallet paths as start/count pairs (consecutive paths are grouped)
-    // This matches Go's Serialize() logic
-    if (!pathComponents.isEmpty()) {
-        uint32_t start = pathComponents[0];
-        uint32_t count = 0;
-        
-        for (int i = 1; i < pathComponents.size(); ++i) {
-            if (pathComponents[i] == start + count + 1) {
-                // Consecutive path, extend range
-                count++;
-            } else {
-                // Non-consecutive, write current range and start new one
-                writeLEB128(metadata, start);
-                writeLEB128(metadata, count);
-                start = pathComponents[i];
-                count = 0;
-            }
-        }
-        
-        // Write final range
-        writeLEB128(metadata, start);
-        writeLEB128(metadata, count);
     }
     
     qDebug() << "SessionManager: Encoded metadata size:" << metadata.size() << "bytes";
@@ -1149,12 +927,10 @@ bool SessionManager::storeMetadata(const QString& name, const QStringList& paths
     
     // Store metadata on card (public data type)
     // Use P1StoreDataPublic (0x00) as defined in status-keycard-go
-    bool success = m_commandSet->storeData(0x00, metadata);  // 0x00 = P1StoreDataPublic
+    bool success = m_commMgr->storeDataToCard(0x00, metadata);  // 0x00 = P1StoreDataPublic
     
     if (!success) {
-        setError(QString("Failed to store metadata: %1").arg(m_commandSet->lastError()));
-        operationCompleted();
-
+        setError("Failed to store metadata");
         return false;
     }
 
@@ -1166,7 +942,6 @@ bool SessionManager::storeMetadata(const QString& name, const QStringList& paths
             .publicKey = ""
         });
     }
-    operationCompleted();
 
     return true;
 }

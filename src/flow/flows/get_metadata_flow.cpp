@@ -2,60 +2,12 @@
 #include "../flow_manager.h"
 #include "../flow_params.h"
 #include <keycard-qt/command_set.h>
+#include <keycard-qt/tlv_utils.h>
 #include <QJsonArray>
 #include <QCryptographicHash>
 
 namespace StatusKeycard {
 
-// Helper: Find TLV tag in data
-static QByteArray findTlvTag(const QByteArray& data, uint8_t tag) {
-    int offset = 0;
-    while (offset < data.size()) {
-        if (offset + 2 > data.size()) break;
-        
-        uint8_t t = static_cast<uint8_t>(data[offset]);
-        if (t == tag) {
-            // Found the tag, parse length
-            int lenOffset = offset + 1;
-            int length = static_cast<uint8_t>(data[lenOffset]);
-            int dataOffset = lenOffset + 1;
-            
-            // Handle extended length (if bit 7 is set)
-            if (length & 0x80) {
-                int numLengthBytes = length & 0x7F;
-                if (dataOffset + numLengthBytes > data.size()) break;
-                length = 0;
-                for (int i = 0; i < numLengthBytes; i++) {
-                    length = (length << 8) | static_cast<uint8_t>(data[dataOffset + i]);
-                }
-                dataOffset += numLengthBytes;
-            }
-            
-            if (dataOffset + length > data.size()) break;
-            return data.mid(dataOffset, length);
-        }
-        
-        // Skip this tag
-        int lenOffset = offset + 1;
-        if (lenOffset >= data.size()) break;
-        int length = static_cast<uint8_t>(data[lenOffset]);
-        int dataOffset = lenOffset + 1;
-        
-        if (length & 0x80) {
-            int numLengthBytes = length & 0x7F;
-            if (dataOffset + numLengthBytes > data.size()) break;
-            length = 0;
-            for (int i = 0; i < numLengthBytes; i++) {
-                length = (length << 8) | static_cast<uint8_t>(data[dataOffset + i]);
-            }
-            dataOffset += numLengthBytes;
-        }
-        
-        offset = dataOffset + length;
-    }
-    
-    return QByteArray();
-}
 
 GetMetadataFlow::GetMetadataFlow(FlowManager* mgr, const QJsonObject& params, QObject* parent)
     : FlowBase(mgr, FlowType::GetMetadata, params, parent) {}

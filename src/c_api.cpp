@@ -4,6 +4,7 @@
 #include "signal_manager.h"
 #include "flow/flow_manager.h"
 #include "storage/file_pairing_storage.h"
+#include "keycard-qt/communication_manager.h"
 #include <QString>
 #include <QObject>
 #include <QThread>
@@ -17,13 +18,15 @@ struct StatusKeycardContextImpl {
     std::unique_ptr<StatusKeycard::RpcService> rpcService;
     StatusKeycard::SignalManager* signalManager;
     SignalCallback signalCallback;
-    std::shared_ptr<Keycard::CommandSet> sharedCommandSet;  // Shared between FlowManager and SessionManager
+    std::shared_ptr<Keycard::CommunicationManager> commMgr;  // Communication manager for SessionManager
+    std::shared_ptr<Keycard::CommandSet> commandSet;  // Single CommandSet shared by both SessionManager and FlowManager
     std::shared_ptr<Keycard::KeycardChannel> channel;  // Global channel instance
     std::shared_ptr<Keycard::IPairingStorage> pairingStorage;
     
     StatusKeycardContextImpl()
         : signalCallback(nullptr)
-        , sharedCommandSet(nullptr)
+        , commMgr(nullptr)
+        , commandSet(nullptr)
     {
         qDebug() << "StatusKeycardContextImpl: Constructor called";
         // Initialize Qt if needed
@@ -34,12 +37,25 @@ struct StatusKeycardContextImpl {
         
         pairingStorage = std::make_shared<StatusKeycard::FilePairingStorage>();
 
-        // Get CommandSet from FlowManager
-        sharedCommandSet = std::make_shared<Keycard::CommandSet>(channel, pairingStorage, [](const QString& cardUID) { return "KeycardDefaultPairing"; });
+        // Create password provider
+        auto passwordProvider = [](const QString& cardUID) { return "KeycardDefaultPairing"; };
+
         
-        // Create RPC service
+        // Create single CommandSet - shared by both SessionManager and FlowManager
+        commandSet = std::make_shared<Keycard::CommandSet>(
+            channel, pairingStorage, passwordProvider);
+        qDebug() << "StatusKeycardContextImpl: Created unified CommandSet";
+        
+        commMgr = std::make_shared<Keycard::CommunicationManager>();
+        if (!commMgr->init(commandSet)) {
+            qWarning() << "StatusKeycardContextImpl: Failed to initialize CommunicationManager";
+        }
+        qDebug() << "StatusKeycardContextImpl: CommunicationManager initialized with unified CommandSet";
+        qDebug() << "StatusKeycardContextImpl: Single CommandSet - no race conditions possible!";
+        
+        // Create RPC service and pass CommunicationManager
         rpcService = std::make_unique<StatusKeycard::RpcService>();
-        rpcService->setSharedCommandSet(sharedCommandSet);
+        rpcService->setCommunicationManager(commMgr);
         
         // Get signal manager instance
         signalManager = StatusKeycard::SignalManager::instance();
@@ -201,6 +217,7 @@ void ResetAPIWithContext(StatusKeycardContext ctx) {
     // Reset RPC service
     impl->rpcService.reset();
     impl->rpcService = std::make_unique<StatusKeycard::RpcService>();
+    impl->rpcService->setCommunicationManager(impl->commMgr);
     
     // Reconnect signals
     QObject::connect(impl->rpcService->sessionManager(), &StatusKeycard::SessionManager::stateChanged,
@@ -226,7 +243,8 @@ char* KeycardInitFlowWithContext(StatusKeycardContext ctx, const char* storageDi
     if (auto fileStorage = std::dynamic_pointer_cast<StatusKeycard::FilePairingStorage>(impl->pairingStorage)) {
         fileStorage->setPath(QString::fromUtf8(storageDir));
     }
-    bool success = StatusKeycard::FlowManager::instance()->init(impl->sharedCommandSet);
+    // Use the same unified CommandSet for FlowManager
+    bool success = StatusKeycard::FlowManager::instance()->init(impl->commandSet);
     
     if (!success) {
         const char* error = R"({"success": false, "error": "Failed to initialize FlowManager"})";

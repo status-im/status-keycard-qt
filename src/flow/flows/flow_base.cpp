@@ -2,6 +2,7 @@
 #include "../flow_manager.h"
 #include "../flow_signals.h"
 #include <keycard-qt/keycard_channel.h>
+#include <keycard-qt/tlv_utils.h>
 #include <QDebug>
 #include <QThread>
 #include <QEventLoop>
@@ -523,65 +524,6 @@ QString FlowBase::publicKeyToAddress(const QByteArray& pubKey) {
     return QString("0x") + address.toHex();
 }
 
-// Helper to parse TLV length (BER-TLV format)
-static quint32 parseTlvLength(const QByteArray& data, int& offset) {
-    if (offset >= data.size()) {
-        return 0;
-    }
-    
-    uint8_t firstByte = static_cast<uint8_t>(data[offset]);
-    offset++;
-    
-    if ((firstByte & 0x80) == 0) {
-        // Short form: length is in the lower 7 bits
-        return firstByte;
-    }
-    
-    // Long form: lower 7 bits indicate number of length bytes
-    int numLengthBytes = firstByte & 0x7F;
-    if (numLengthBytes > 4 || offset + numLengthBytes > data.size()) {
-        return 0;
-    }
-    
-    quint32 length = 0;
-    for (int i = 0; i < numLengthBytes; i++) {
-        length = (length << 8) | static_cast<uint8_t>(data[offset]);
-        offset++;
-    }
-    
-    return length;
-}
-
-// Helper to find a TLV tag in data
-static QByteArray findTlvTag(const QByteArray& data, uint8_t targetTag) {
-    int offset = 0;
-    
-    while (offset < data.size()) {
-        if (offset >= data.size()) {
-            break;
-        }
-        
-        uint8_t tag = static_cast<uint8_t>(data[offset]);
-        offset++;
-        
-        quint32 length = parseTlvLength(data, offset);
-        if (length == 0 && offset >= data.size()) {
-            break;
-        }
-        
-        if (offset + static_cast<int>(length) > data.size()) {
-            break;
-        }
-        
-        if (tag == targetTag) {
-            return data.mid(offset, length);
-        }
-        
-        offset += length;
-    }
-    
-    return QByteArray();
-}
 
 bool FlowBase::parseExportedKey(const QByteArray& data, QByteArray& publicKey, QByteArray& privateKey) {
     publicKey.clear();
@@ -592,18 +534,18 @@ bool FlowBase::parseExportedKey(const QByteArray& data, QByteArray& publicKey, Q
         return false;
     }
     
-    // Find template tag 0xA1
-    QByteArray template_ = findTlvTag(data, 0xA1);
+    // Find template tag 0xA1 using common TLV utility
+    QByteArray template_ = Keycard::TLV::findTag(data, 0xA1);
     if (template_.isEmpty()) {
         qWarning() << "parseExportedKey: Failed to find template tag 0xA1";
         return false;
     }
     
     // Find public key (0x80)
-    publicKey = findTlvTag(template_, 0x80);
+    publicKey = Keycard::TLV::findTag(template_, 0x80);
     
     // Find private key (0x81) if available
-    privateKey = findTlvTag(template_, 0x81);
+    privateKey = Keycard::TLV::findTag(template_, 0x81);
     
     if (publicKey.isEmpty()) {
         qWarning() << "parseExportedKey: No public key found";

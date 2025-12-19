@@ -1,6 +1,7 @@
 #include "rpc_service.h"
 #include "../session/session_manager.h"
 #include "../storage/file_pairing_storage.h"
+#include "keycard-qt/communication_manager.h"
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
@@ -16,10 +17,10 @@ RpcService::RpcService(QObject* parent)
 
 RpcService::~RpcService() = default;
 
-void RpcService::setSharedCommandSet(std::shared_ptr<Keycard::CommandSet> commandSet) {
-    qDebug() << "RpcService: Setting shared CommandSet for SessionManager";
+void RpcService::setCommunicationManager(std::shared_ptr<Keycard::CommunicationManager> commMgr) {
+    m_commMgr = commMgr;
     if (m_sessionManager) {
-        m_sessionManager->setCommandSet(commandSet);
+        m_sessionManager->setCommunicationManager(commMgr);
     }
 }
 
@@ -187,21 +188,20 @@ QJsonObject RpcService::handleStart(const QString& id, const QJsonObject& params
     if (!m_sessionManager) {
         return createErrorResponse(id, -32000, "SessionManager not set");
     }
-    if (!m_sessionManager->commandSet()) {
-        return createErrorResponse(id, -32000, "CommandSet not set");
+    if (!m_commMgr) {
+        return createErrorResponse(id, -32000, "CommunicationManager not set");
     }
-    auto storage = m_sessionManager->commandSet()->pairingStorage();
-    if (auto fileStorage = std::dynamic_pointer_cast<StatusKeycard::FilePairingStorage>(storage)) {
-        fileStorage->setPath(storagePath);
-    }
+    
+    // Note: Pairing storage path should be configured when creating the CommunicationManager
+    // If needed, add a method to CommunicationManager to update storage path here
     
     bool success = m_sessionManager->start(logEnabled, logFilePath);
     if (!success) {
         return createErrorResponse(id, -32000, m_sessionManager->lastError());
     }
     
-    qWarning() << "RpcService::handleStart() completed. SessionManager started successfully.";
-    qWarning() << "KeycardChannel at:" << (void*)m_sessionManager->getChannel();
+    qDebug() << "RpcService::handleStart() completed. SessionManager started successfully.";
+    qDebug() << "CommunicationManager at:" << (void*)m_commMgr.get();
     
     return createSuccessResponse(id, QJsonObject());
 }
