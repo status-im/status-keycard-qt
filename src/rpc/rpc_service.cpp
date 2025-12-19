@@ -18,6 +18,7 @@ RpcService::RpcService(QObject* parent)
 RpcService::~RpcService() = default;
 
 void RpcService::setCommunicationManager(std::shared_ptr<Keycard::CommunicationManager> commMgr) {
+    qDebug() << "RpcService: Setting CommunicationManager for SessionManager";
     m_commMgr = commMgr;
     if (m_sessionManager) {
         m_sessionManager->setCommunicationManager(commMgr);
@@ -191,10 +192,17 @@ QJsonObject RpcService::handleStart(const QString& id, const QJsonObject& params
     if (!m_commMgr) {
         return createErrorResponse(id, -32000, "CommunicationManager not set");
     }
+    if (!m_commMgr->commandSet()) {
+        return createErrorResponse(id, -32000, "CommandSet not set");
+    }
     
     // Note: Pairing storage path should be configured when creating the CommunicationManager
-    // If needed, add a method to CommunicationManager to update storage path here
-    
+    if (auto pairingStorage = m_commMgr->commandSet()->pairingStorage()) {
+        if (auto filePairingStorage = std::dynamic_pointer_cast<StatusKeycard::FilePairingStorage>(pairingStorage)) {
+            filePairingStorage->setPath(storagePath);
+        }
+    }
+
     bool success = m_sessionManager->start(logEnabled, logFilePath);
     if (!success) {
         return createErrorResponse(id, -32000, m_sessionManager->lastError());

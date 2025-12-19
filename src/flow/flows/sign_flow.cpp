@@ -3,6 +3,8 @@
 #include "../flow_params.h"
 #include "../flow_signals.h"
 #include <keycard-qt/command_set.h>
+#include <keycard-qt/communication_manager.h>
+#include <keycard-qt/card_command.h>
 #include <QDebug>
 
 #include <openssl/ec.h>
@@ -165,9 +167,32 @@ QJsonObject SignFlow::execute()
     }
     
     // Sign with the specified path - use the full response version to get TLV data
-    auto cmdSet = commandSet();
     QByteArray hashBytes = QByteArray::fromHex(txHash.toLatin1());
-    QByteArray tlvResponse = cmdSet->signWithPathFullResponse(hashBytes, path);
+    
+    // Phase 6: CommunicationManager is always available
+    auto commMgr = communicationManager();
+    if (!commMgr) {
+        qCritical() << "SignFlow: CommunicationManager not available";
+        QJsonObject error;
+        error[FlowParams::ERROR_KEY] = "sign-failed";
+        return error;
+    }
+    
+    auto cmd = std::make_unique<Keycard::SignCommand>(hashBytes, path, false);
+    Keycard::CommandResult cmdResult = commMgr->executeCommandSync(std::move(cmd), 30000);
+    
+    if (!cmdResult.success) {
+        qCritical() << "SignFlow: Sign failed:" << cmdResult.error;
+        QJsonObject error;
+        error[FlowParams::ERROR_KEY] = "sign-failed";
+        return error;
+    }
+    
+    // Extract TLV response from cmdResult
+    QVariantMap data = cmdResult.data.toMap();
+    QByteArray tlvResponse = data["tlvResponse"].toByteArray();
+    
+    qDebug() << "SignFlow: Sign SUCCESS, response size:" << tlvResponse.size();
     
     if (tlvResponse.isEmpty()) {
         QJsonObject error;

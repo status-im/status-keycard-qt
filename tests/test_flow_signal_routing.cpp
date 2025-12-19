@@ -62,7 +62,9 @@ private slots:
         SignalManager::instance()->setCallback(signalCallback);
         
         auto cmdSet = createMockCommandSet();
-        bool success = FlowManager::instance()->init(cmdSet);
+        auto commMgr = std::make_shared<Keycard::CommunicationManager>();
+        commMgr->init(cmdSet);
+        bool success = FlowManager::instance()->init(cmdSet, commMgr);
         QVERIFY(success);
         
         QObject::connect(FlowManager::instance(), &FlowManager::flowSignal,

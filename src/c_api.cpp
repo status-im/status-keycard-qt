@@ -39,13 +39,16 @@ struct StatusKeycardContextImpl {
 
         // Create password provider
         auto passwordProvider = [](const QString& cardUID) { return "KeycardDefaultPairing"; };
-
         
         // Create single CommandSet - shared by both SessionManager and FlowManager
         commandSet = std::make_shared<Keycard::CommandSet>(
             channel, pairingStorage, passwordProvider);
         qDebug() << "StatusKeycardContextImpl: Created unified CommandSet";
         
+        // Create and initialize CommunicationManager using CommandSet
+        // CommunicationManager connects to CommandSet signals (cardReady, cardLost)
+        // Note: We init() here but don't startDetection() yet
+        // SessionManager will call startDetection() when it's ready
         commMgr = std::make_shared<Keycard::CommunicationManager>();
         if (!commMgr->init(commandSet)) {
             qWarning() << "StatusKeycardContextImpl: Failed to initialize CommunicationManager";
@@ -243,13 +246,17 @@ char* KeycardInitFlowWithContext(StatusKeycardContext ctx, const char* storageDi
     if (auto fileStorage = std::dynamic_pointer_cast<StatusKeycard::FilePairingStorage>(impl->pairingStorage)) {
         fileStorage->setPath(QString::fromUtf8(storageDir));
     }
-    // Use the same unified CommandSet for FlowManager
-    bool success = StatusKeycard::FlowManager::instance()->init(impl->commandSet);
+    // Use the same unified CommandSet and CommunicationManager for FlowManager
+    // This ensures flows and session operations share the same command queue
+    bool success = StatusKeycard::FlowManager::instance()->init(impl->commMgr);
     
     if (!success) {
         const char* error = R"({"success": false, "error": "Failed to initialize FlowManager"})";
         return strdup(error);
     }
+    
+    qDebug() << "C API: FlowManager initialized with shared CommunicationManager";
+    qDebug() << "C API: SessionManager and FlowManager now share command queue!";
     
     
     const char* response = R"({"success": true})";

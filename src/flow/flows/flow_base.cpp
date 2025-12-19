@@ -2,6 +2,8 @@
 #include "../flow_manager.h"
 #include "../flow_signals.h"
 #include <keycard-qt/keycard_channel.h>
+#include <keycard-qt/communication_manager.h>
+#include <keycard-qt/card_command.h>
 #include <keycard-qt/tlv_utils.h>
 #include <QDebug>
 #include <QThread>
@@ -58,21 +60,20 @@ void FlowBase::cancel()
 // Access to manager resources
 // ============================================================================
 
-Keycard::KeycardChannel* FlowBase::channel() const
-{
-    if (!m_manager) {
-        qWarning() << "FlowBase::channel() No FlowManager available";
-        return nullptr;
-    }
-    return m_manager->channel();
-}
-
 std::shared_ptr<Keycard::CommandSet> FlowBase::commandSet() const { 
     if (!m_manager) {
         qWarning() << "FlowBase::commandSet() No FlowManager available";
         return nullptr;
     }
     return m_manager->commandSet();
+}
+
+std::shared_ptr<Keycard::CommunicationManager> FlowBase::communicationManager() const {
+    if (!m_manager) {
+        qWarning() << "FlowBase::communicationManager() No FlowManager available";
+        return nullptr;
+    }
+    return m_manager->communicationManager();
 }
 
 // ============================================================================
@@ -87,18 +88,6 @@ void FlowBase::pauseAndWait(const QString& action, const QString& error)
 void FlowBase::pauseAndWaitWithStatus(const QString& action, const QString& error, 
                                      const QJsonObject& status)
 {
-    // iOS: Manage NFC drawer based on action type
-    if (action == FlowSignals::INSERT_CARD) {
-        // Waiting for card - open NFC drawer
-        qDebug() << "FlowBase: Opening NFC drawer to wait for card, action:" << action;
-        channel()->setState(Keycard::ChannelState::WaitingForCard);
-    } else if (action == FlowSignals::ENTER_PIN || 
-               action == FlowSignals::ENTER_PUK || 
-               action.contains("enter-") || action.contains("input-")) {
-        // Waiting for user input - close NFC drawer so user can interact with UI
-        qDebug() << "FlowBase: Closing NFC drawer for user input action:" << action;
-        channel()->setState(Keycard::ChannelState::Idle);
-    }
     
     // Build event with error and status
     QJsonObject event = status;
@@ -143,20 +132,34 @@ bool FlowBase::selectKeycard()
 {
     qDebug() << "FlowBase::selectKeycard()";
     
-    if (!commandSet()) {
-        qCritical() << "FlowBase: No CommandSet available";
-        emit flowError("No CommandSet available");
+    // Phase 6: CommunicationManager is always available
+    auto commMgr = communicationManager();
+    if (!commMgr) {
+        qCritical() << "FlowBase: CommunicationManager not available (should never happen after Phase 4)";
+        emit flowError("CommunicationManager not initialized");
         return false;
     }
     
-    // Select keycard applet
-    Keycard::ApplicationInfo appInfo = commandSet()->select();
-    if (!appInfo.installed) {
+    auto cmd = std::make_unique<Keycard::SelectCommand>(false);
+    Keycard::CommandResult result = commMgr->executeCommandSync(std::move(cmd), 30000);
+    
+    if (!result.success) {
+        qCritical() << "FlowBase: SELECT failed:" << result.error;
+        emit flowError(result.error);
+        return false;
+    }
+    
+    // Check if applet is installed
+    QVariantMap data = result.data.toMap();
+    bool installed = data["installed"].toBool();
+    
+    if (!installed) {
         qCritical() << "FlowBase: Keycard applet not installed!";
         emit flowError("Keycard applet not installed");
         return false;
     }
     
+    qDebug() << "FlowBase::selectKeycard() - SUCCESS";
     return true;
 }
 
@@ -191,25 +194,30 @@ FlowResult FlowBase::initializeKeycard()
         pairingPassword = "KeycardDefaultPairing";
     }
     
-    auto cmdSet = commandSet();
-    Keycard::Secrets secrets(pin, puk, pairingPassword);
-    if (!cmdSet || !cmdSet->init(secrets)) {
-        qWarning() << "FlowBase: Card initialization failed:" << (cmdSet ? cmdSet->lastError() : "No CommandSet");
+    // Phase 6: CommunicationManager is always available
+    auto commMgr = communicationManager();
+    if (!commMgr) {
+        qCritical() << "FlowBase: CommunicationManager not available";
         result[FlowParams::ERROR_KEY] = "init-failed";
         return FlowResult{false, result};
     }
-
+    
+    auto cmd = std::make_unique<Keycard::InitCommand>(pin, puk, pairingPassword);
+    Keycard::CommandResult cmdResult = commMgr->executeCommandSync(std::move(cmd), 60000);
+    
+    if (!cmdResult.success) {
+        qWarning() << "FlowBase: Card initialization failed:" << cmdResult.error;
+        result[FlowParams::ERROR_KEY] = "init-failed";
+        return FlowResult{false, result};
+    }
+    
+    qDebug() << "FlowBase::initializeKeycard() - SUCCESS";
     return FlowResult{true, buildCardInfoJson()};
 }
 
 bool FlowBase::unblockPIN()
 {
     qDebug() << "FlowBase: Unblocking PIN...";
-    if (!commandSet()) {
-        qCritical() << "FlowBase: No CommandSet available";
-        emit flowError("No CommandSet available");
-        return false;
-    }
 
     QString puk = m_params[FlowParams::PUK].toString();
 
@@ -218,6 +226,7 @@ bool FlowBase::unblockPIN()
         if (m_cancelled) {
             return false;
         }
+        puk = m_params[FlowParams::PUK].toString();
     }
 
     QString newPIN = m_params[FlowParams::NEW_PIN].toString();
@@ -230,42 +239,70 @@ bool FlowBase::unblockPIN()
         newPIN = m_params[FlowParams::NEW_PIN].toString();
     }
 
-    auto ok = commandSet()->unblockPIN(puk, newPIN);
-    if (!ok) {
-        if (commandSet()->cachedApplicationStatus().pukRetryCount == 0) {
+    // Phase 6: CommunicationManager is always available
+    auto commMgr = communicationManager();
+    if (!commMgr) {
+        qCritical() << "FlowBase: CommunicationManager not available";
+        emit flowError("CommunicationManager not initialized");
+        return false;
+    }
+    
+    auto cmd = std::make_unique<Keycard::UnblockPINCommand>(puk, newPIN);
+    Keycard::CommandResult result = commMgr->executeCommandSync(std::move(cmd), 30000);
+    
+    if (!result.success) {
+        // Check if PUK is exhausted
+        auto status = commMgr->applicationStatus();
+        if (status.pukRetryCount == 0) {
+            qCritical() << "FlowBase: PUK exhausted!";
             return false;
         }
+        
+        qWarning() << "FlowBase: Unblock PIN failed:" << result.error;
         pauseAndWait(FlowSignals::ENTER_PUK, "puk");
         if (m_cancelled) {
             return false;
         }
         return unblockPIN();
     }
-
-    m_params[FlowParams::PIN] = newPIN;
     
+    m_params[FlowParams::PIN] = newPIN;
+    qDebug() << "FlowBase::unblockPIN() - SUCCESS";
     return true;
 }
 
 bool FlowBase::verifyPIN(bool giveup)
 {
     qDebug() << "FlowBase: Verifying PIN...";
-    if (!commandSet()) {
-        qCritical() << "FlowBase: No CommandSet available";
-        emit flowError("No CommandSet available");
+    
+    // Phase 6: CommunicationManager is always available
+    auto commMgr = communicationManager();
+    if (!commMgr) {
+        qCritical() << "FlowBase: CommunicationManager not available";
+        emit flowError("CommunicationManager not initialized");
         return false;
     }
-
-    auto appInfo = commandSet()->select();
-
-    if (!appInfo.initialized) {
+    
+    // Check card info (should be available from CommunicationManager)
+    auto selectCommand = std::make_unique<Keycard::SelectCommand>(false);
+    Keycard::CommandResult selectResult = commMgr->executeCommandSync(std::move(selectCommand), 30000);
+    if (!selectResult.success) {
+        qCritical() << "FlowBase: Select command failed:" << selectResult.error;
+        emit flowError(selectResult.error);
+        return false;
+    }
+    QVariantMap selectData = selectResult.data.toMap();
+    bool initialized = selectData["initialized"].toBool();
+    
+    if (!initialized) {
         if (!giveup)
             return initializeKeycard().ok;
         return true;
     }
 
-    auto appStatus = commandSet()->getStatus(Keycard::APDU::P1GetStatusApplication);
-    if (appStatus.pinRetryCount == 0 && appStatus.valid) {
+    // Check PIN status
+    auto appStatus = commMgr->applicationStatus();
+    if (appStatus.pinRetryCount == 0) {
         qWarning() << "FlowBase: PIN blocked!";
         auto ok = unblockPIN();
         if (m_cancelled) {
@@ -297,10 +334,12 @@ bool FlowBase::verifyPIN(bool giveup)
         return false;
     }
     
-    // Verify PIN
-    auto response = commandSet()->verifyPIN(pin);
-    if (!response) {
-        qCritical() << "FlowBase: PIN verification failed!";
+    // Verify PIN using command
+    auto cmd = std::make_unique<Keycard::VerifyPINCommand>(pin);
+    Keycard::CommandResult result = commMgr->executeCommandSync(std::move(cmd), 30000);
+    
+    if (!result.success) {
+        qCritical() << "FlowBase: PIN verification failed:" << result.error;
         // Wrong PIN, ask again (pauseAndWait will include pinRetries in the event)
         pauseAndWait(FlowSignals::ENTER_PIN, "pin");
         
@@ -400,6 +439,7 @@ FlowResult FlowBase::loadMnemonic()
 {
     // Get mnemonic from params (or generate indexes and pause to request it)
     QString mnemonic = m_params[FlowParams::MNEMONIC].toString();
+    
     if (mnemonic.isEmpty()) {
         int mnemonicLength = 12; // Default BIP39 mnemonic length
         if (m_params.contains(FlowParams::MNEMONIC_LEN)) {
@@ -407,15 +447,32 @@ FlowResult FlowBase::loadMnemonic()
         }
         int checksumSize = mnemonicLength / 3;
         
-        auto cmdSet = commandSet();
-        QVector<int> indexes = cmdSet->generateMnemonic(checksumSize);
         QJsonObject result = buildCardInfoJson();
-
-        if (indexes.isEmpty() || !cmdSet->lastError().isEmpty()) {
-            qWarning() << "LoadAccountFlow: Failed to generate mnemonic:" << cmdSet->lastError();
+        
+        // Phase 6: CommunicationManager is always available
+        auto commMgr = communicationManager();
+        if (!commMgr) {
+            qCritical() << "FlowBase: CommunicationManager not available";
             result[FlowParams::ERROR_KEY] = "generate-failed";
             return FlowResult{false, result};
-        }        
+        }
+        
+        auto cmd = std::make_unique<Keycard::GenerateMnemonicCommand>(checksumSize);
+        Keycard::CommandResult cmdResult = commMgr->executeCommandSync(std::move(cmd), 30000);
+        
+        if (!cmdResult.success) {
+            qWarning() << "LoadAccountFlow: Failed to generate mnemonic:" << cmdResult.error;
+            result[FlowParams::ERROR_KEY] = "generate-failed";
+            return FlowResult{false, result};
+        }
+        
+        // Extract indexes from result
+        QVariantList indexList = cmdResult.data.toList();
+        QVector<int> indexes;
+        for (const QVariant& v : indexList) {
+            indexes.append(v.toInt());
+        }
+        
         // Add mnemonic-indexes array
         QJsonArray indexesArray;
         for (int idx : indexes) {
@@ -442,18 +499,31 @@ FlowResult FlowBase::loadMnemonic()
     }
     
     // Load seed onto card
-    auto cmdSet = commandSet();
-    QByteArray keyUID = cmdSet->loadSeed(seed);
     QJsonObject result = buildCardInfoJson();
-
-    if (keyUID.isEmpty()) {
-        qWarning() << "LoadAccountFlow: Failed to load seed onto card";
+    
+    // Phase 6: CommunicationManager is always available
+    auto commMgr = communicationManager();
+    if (!commMgr) {
+        qCritical() << "FlowBase: CommunicationManager not available";
         result[FlowParams::ERROR_KEY] = "load-failed";
         return FlowResult{false, result};
     }
-
-    result[FlowParams::KEY_UID] = QString("0x") + keyUID.toHex();
-
+    
+    auto cmd = std::make_unique<Keycard::LoadSeedCommand>(seed);
+    Keycard::CommandResult cmdResult = commMgr->executeCommandSync(std::move(cmd), 60000);
+    
+    if (!cmdResult.success) {
+        qWarning() << "LoadAccountFlow: Failed to load seed:" << cmdResult.error;
+        result[FlowParams::ERROR_KEY] = "load-failed";
+        return FlowResult{false, result};
+    }
+    
+    // Extract keyUID from result
+    QVariantMap data = cmdResult.data.toMap();
+    QString keyUIDHex = data["keyUID"].toString();
+    result[FlowParams::KEY_UID] = QString("0x") + keyUIDHex;
+    
+    qDebug() << "FlowBase::loadMnemonic() - SUCCESS";
     return FlowResult{true, result};
 }
 
@@ -464,11 +534,11 @@ FlowResult FlowBase::loadMnemonic()
 FlowBase::CardInfo FlowBase::buildCardInfo() const
 {
     FlowBase::CardInfo result;
-    if (!commandSet())
+    if (!communicationManager())
         return result;
 
-    auto appInfo = commandSet()->applicationInfo();
-    auto appStatus = commandSet()->cachedApplicationStatus();
+    auto appInfo = communicationManager()->applicationInfo();
+    auto appStatus = communicationManager()->applicationStatus();
 
     result.instanceUID = appInfo.instanceUID.toHex();
     result.keyUID = appInfo.keyUID.toHex();
@@ -524,6 +594,7 @@ QString FlowBase::publicKeyToAddress(const QByteArray& pubKey) {
     return QString("0x") + address.toHex();
 }
 
+// TLV parsing functions moved to tlv_utils.h/cpp - using Keycard::TLV:: utilities
 
 bool FlowBase::parseExportedKey(const QByteArray& data, QByteArray& publicKey, QByteArray& privateKey) {
     publicKey.clear();

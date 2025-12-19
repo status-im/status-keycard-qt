@@ -2,12 +2,15 @@
 #include "../flow_manager.h"
 #include "../flow_params.h"
 #include <keycard-qt/command_set.h>
+#include <keycard-qt/communication_manager.h>
+#include <keycard-qt/card_command.h>
 #include <keycard-qt/tlv_utils.h>
 #include <QJsonArray>
 #include <QCryptographicHash>
 
 namespace StatusKeycard {
 
+// TLV helper function removed - now using Keycard::TLV::findTag()
 
 GetMetadataFlow::GetMetadataFlow(FlowManager* mgr, const QJsonObject& params, QObject* parent)
     : FlowBase(mgr, FlowType::GetMetadata, params, parent) {}
@@ -16,7 +19,27 @@ QJsonObject GetMetadataFlow::execute()
 {
     // Get metadata from card (matching status-keycard-go)
     qDebug() << "GetMetadataFlow: Getting metadata from card";
-    QByteArray metadataData = commandSet()->getData(Keycard::APDU::P1StoreDataPublic);  // 0x00
+    
+    // Phase 6: CommunicationManager is always available
+    auto commMgr = communicationManager();
+    if (!commMgr) {
+        qCritical() << "GetMetadataFlow: CommunicationManager not available";
+        QJsonObject error;
+        error[FlowParams::ERROR_KEY] = "get-metadata-failed";
+        return error;
+    }
+    
+    auto cmd = std::make_unique<Keycard::GetMetadataCommand>();
+    Keycard::CommandResult cmdResult = commMgr->executeCommandSync(std::move(cmd), 30000);
+    
+    QByteArray metadataData;
+    if (!cmdResult.success) {
+        qWarning() << "GetMetadataFlow: Failed to get metadata:" << cmdResult.error;
+        // Don't return error - just empty metadata
+    } else {
+        QVariantMap data = cmdResult.data.toMap();
+        metadataData = data["tlvData"].toByteArray();
+    }
     
     // Check if data looks like a status word (error response)
     // Status words are 2 bytes: SW1 SW2 (e.g. 0x6a86 = no data available)
@@ -151,7 +174,16 @@ QJsonObject GetMetadataFlow::execute()
         bool exportMaster = params().value(FlowParams::EXPORT_MASTER).toBool();
         if (exportMaster) {
             qDebug() << "GetMetadataFlow: Exporting master address";
-            QByteArray masterKeyData = commandSet()->exportKey(true, false, "m");
+            
+            // Phase 6: CommunicationManager is always available (already checked at start)
+            auto cmd = std::make_unique<Keycard::ExportKeyCommand>(true, false, "m", 
+                Keycard::APDU::P2ExportKeyPublicOnly);
+            Keycard::CommandResult result = commMgr->executeCommandSync(std::move(cmd), 30000);
+            
+            QByteArray masterKeyData;
+            if (result.success) {
+                masterKeyData = result.data.toMap()["keyData"].toByteArray();
+            }
             if (!masterKeyData.isEmpty()) {
                 // Parse TLV structure to extract public key, private key, and chain code
                 QByteArray publicKey;
@@ -213,7 +245,15 @@ QJsonObject GetMetadataFlow::execute()
             QJsonObject wallet = wallets[i].toObject();
             QString walletPath = wallet["path"].toString();
             
-            QByteArray keyData = commandSet()->exportKey(true, false, walletPath);
+            // Phase 6: CommunicationManager is always available (already checked at start)
+            auto cmd = std::make_unique<Keycard::ExportKeyCommand>(true, false, walletPath,
+                Keycard::APDU::P2ExportKeyPublicOnly);
+            Keycard::CommandResult result = commMgr->executeCommandSync(std::move(cmd), 30000);
+            
+            QByteArray keyData;
+            if (result.success) {
+                keyData = result.data.toMap()["keyData"].toByteArray();
+            }
             if (!keyData.isEmpty()) {
                 // Parse TLV structure to extract public key, private key, and chain code
                 // Format: Tag 0xA1 (template) -> Tag 0x80 (public key), Tag 0x81 (private key), Tag 0x82 (chain code)

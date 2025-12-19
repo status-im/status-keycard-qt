@@ -3,6 +3,8 @@
 #include "../flow_params.h"
 #include "../flow_signals.h"
 #include <keycard-qt/command_set.h>
+#include <keycard-qt/communication_manager.h>
+#include <keycard-qt/card_command.h>
 
 namespace StatusKeycard {
 
@@ -35,12 +37,25 @@ QJsonObject ChangePUKFlow::execute()
         newPUK = params()[FlowParams::NEW_PUK].toString();
     }
     
-    if (!commandSet()->changePUK(newPUK)) {
+    // Phase 6: CommunicationManager is always available
+    auto commMgr = communicationManager();
+    if (!commMgr) {
+        qCritical() << "ChangePUKFlow: CommunicationManager not available";
         QJsonObject error;
         error[FlowParams::ERROR_KEY] = "change-failed";
         return error;
     }
     
+    auto cmd = std::make_unique<Keycard::ChangePUKCommand>(newPUK);
+    Keycard::CommandResult result = commMgr->executeCommandSync(std::move(cmd), 30000);
+    
+    if (!result.success) {
+        QJsonObject error;
+        error[FlowParams::ERROR_KEY] = "change-failed";
+        return error;
+    }
+    
+    qDebug() << "ChangePUKFlow: PUK changed successfully";
     return buildCardInfoJson();
 }
 

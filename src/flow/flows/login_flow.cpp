@@ -2,6 +2,8 @@
 #include "../flow_manager.h"
 #include "../flow_params.h"
 #include <keycard-qt/command_set.h>
+#include <keycard-qt/communication_manager.h>
+#include <keycard-qt/card_command.h>
 #include <keycard-qt/types.h>
 #include <QDebug>
 
@@ -85,28 +87,39 @@ QJsonObject LoginFlow::exportKey(const QString& path, bool includePrivate)
         return QJsonObject();
     }
     
-    // Get command set from FlowBase
-    auto cmdSet = commandSet();
-    if (!cmdSet) {
-        qCritical() << "LoginFlow: No command set available!";
-        return QJsonObject();
-    }
-    
-    // Export key
     // derive=true, makeCurrent=(path=="m"), exportType=private or public
     bool makeCurrent = (path == "m"); // Only for master path
     uint8_t exportType = includePrivate ? 
         Keycard::APDU::P2ExportKeyPrivateAndPublic :
         Keycard::APDU::P2ExportKeyPublicOnly;
     
-    QByteArray keyData = cmdSet->exportKey(true, makeCurrent, path, exportType);
+    // Phase 6: CommunicationManager is always available
+    auto commMgr = communicationManager();
+    if (!commMgr) {
+        qCritical() << "LoginFlow: CommunicationManager not available";
+        return QJsonObject();
+    }
     
+    auto cmd = std::make_unique<Keycard::ExportKeyCommand>(true, makeCurrent, path, exportType);
+    Keycard::CommandResult result = commMgr->executeCommandSync(std::move(cmd), 30000);
+    
+    if (!result.success) {
+        qCritical() << "LoginFlow: Export key failed:" << result.error;
+        return QJsonObject();
+    }
+    
+    // Extract key data from result
+    QVariantMap data = result.data.toMap();
+    QByteArray keyData = data["keyData"].toByteArray();
+    
+    qDebug() << "LoginFlow::exportKey() - Export SUCCESS for path:" << path;
+    
+    // Parse and validate key data
     if (keyData.isEmpty()) {
         qCritical() << "LoginFlow: Export key returned empty data!";
         return QJsonObject();
     }
     
-    // Parse key data
     // Parse TLV-encoded key data
     QByteArray publicKey, privateKey;
     if (!parseExportedKey(keyData, publicKey, privateKey)) {
@@ -114,6 +127,7 @@ QJsonObject LoginFlow::exportKey(const QString& path, bool includePrivate)
         return QJsonObject();
     }
     
+    // Build result JSON
     QJsonObject keyPair;
     keyPair["publicKey"] = QString("0x") + publicKey.toHex();
     keyPair["address"] = FlowBase::publicKeyToAddress(publicKey);
@@ -125,6 +139,7 @@ QJsonObject LoginFlow::exportKey(const QString& path, bool includePrivate)
         return QJsonObject();
     }
     
+    qDebug() << "LoginFlow::exportKey() - Successfully exported key at path:" << path;
     return keyPair;
 }
 

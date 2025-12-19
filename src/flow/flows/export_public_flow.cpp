@@ -3,6 +3,8 @@
 #include "../flow_params.h"
 #include "../flow_signals.h"
 #include <keycard-qt/command_set.h>
+#include <keycard-qt/communication_manager.h>
+#include <keycard-qt/card_command.h>
 #include <QJsonArray>
 #include <QCryptographicHash>
 
@@ -66,8 +68,30 @@ QJsonObject ExportPublicFlow::execute()
     
     // Export keys for all paths
     QJsonArray exportedKeys;
+    
+    // Phase 6: CommunicationManager is always available
+    auto commMgr = communicationManager();
+    if (!commMgr) {
+        qCritical() << "ExportPublicFlow: CommunicationManager not available";
+        QJsonObject error;
+        error[FlowParams::ERROR_KEY] = "export-failed";
+        return error;
+    }
+    
     for (const QString& path : paths) {
-        QByteArray keyData = commandSet()->exportKey(true, false, path, Keycard::APDU::P2ExportKeyPublicOnly);
+        auto cmd = std::make_unique<Keycard::ExportKeyCommand>(true, false, path, 
+            Keycard::APDU::P2ExportKeyPublicOnly);
+        Keycard::CommandResult result = commMgr->executeCommandSync(std::move(cmd), 30000);
+        
+        if (!result.success) {
+            qCritical() << "ExportPublicFlow: Export failed for path" << path << ":" << result.error;
+            QJsonObject error;
+            error[FlowParams::ERROR_KEY] = "export-failed";
+            return error;
+        }
+        
+        QByteArray keyData = result.data.toMap()["keyData"].toByteArray();
+        
         if (keyData.isEmpty()) {
             QJsonObject error;
             error[FlowParams::ERROR_KEY] = "export-failed";

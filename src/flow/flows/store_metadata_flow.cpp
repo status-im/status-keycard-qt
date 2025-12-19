@@ -3,6 +3,9 @@
 #include "../flow_params.h"
 #include "../flow_signals.h"
 #include <keycard-qt/command_set.h>
+#include <keycard-qt/communication_manager.h>
+#include <keycard-qt/card_command.h>
+#include <keycard-qt/metadata_utils.h>
 #include <algorithm>
 #include <QJsonArray>
 
@@ -132,16 +135,32 @@ QJsonObject StoreMetadataFlow::execute()
     }
     
     // Store metadata using PUBLIC data type (0x00) - matching Go implementation
-    auto cmdSet = commandSet();
-    if (!cmdSet->storeData(Keycard::APDU::P1StoreDataPublic, metadata)) {
-        qWarning() << "StoreMetadataFlow: Failed to store metadata:" << cmdSet->lastError();
+    // Phase 6: CommunicationManager is always available
+    auto commMgr = communicationManager();
+    if (!commMgr) {
+        qCritical() << "StoreMetadataFlow: CommunicationManager not available";
+        QJsonObject error;
+        error[FlowParams::ERROR_KEY] = "store-failed";
+        return error;
+    }
+    
+    // Convert paths back to strings for StoreMetadataCommand
+    QStringList paths;
+    for (const QJsonValue& pathValue : walletPathsArray) {
+        paths.append(pathValue.toString());
+    }
+    
+    auto cmd = std::make_unique<Keycard::StoreMetadataCommand>(cardName, paths);
+    Keycard::CommandResult result = commMgr->executeCommandSync(std::move(cmd), 30000);
+    
+    if (!result.success) {
+        qWarning() << "StoreMetadataFlow: Failed to store metadata:" << result.error;
         QJsonObject error;
         error[FlowParams::ERROR_KEY] = "store-failed";
         return error;
     }
     
     qDebug() << "StoreMetadataFlow: Metadata stored successfully";
-    
     return buildCardInfoJson();
 }
 

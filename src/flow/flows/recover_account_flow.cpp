@@ -2,6 +2,8 @@
 #include "../flow_manager.h"
 #include "../flow_params.h"
 #include <keycard-qt/command_set.h>
+#include <keycard-qt/communication_manager.h>
+#include <keycard-qt/card_command.h>
 #include <keycard-qt/types.h>
 #include <QDebug>
 
@@ -132,21 +134,34 @@ QJsonObject RecoverAccountFlow::exportKey(const QString& path, bool includePriva
         return QJsonObject();
     }
     
-    // Get command set from FlowBase
-    auto cmdSet = commandSet();
-    if (!cmdSet) {
-        qCritical() << "RecoverAccountFlow: No command set available!";
-        return QJsonObject();
-    }
-    
     // Export key
     bool makeCurrent = (path == MASTER_PATH); // Only for master path
     uint8_t exportType = includePrivate ? 
         Keycard::APDU::P2ExportKeyPrivateAndPublic :
         Keycard::APDU::P2ExportKeyPublicOnly;
     
-    QByteArray keyData = cmdSet->exportKey(true, makeCurrent, path, exportType);
+    // Phase 6: CommunicationManager is always available
+    auto commMgr = communicationManager();
+    if (!commMgr) {
+        qCritical() << "RecoverAccountFlow: CommunicationManager not available";
+        return QJsonObject();
+    }
     
+    auto cmd = std::make_unique<Keycard::ExportKeyCommand>(true, makeCurrent, path, exportType);
+    Keycard::CommandResult result = commMgr->executeCommandSync(std::move(cmd), 30000);
+    
+    if (!result.success) {
+        qCritical() << "RecoverAccountFlow: Export key failed:" << result.error;
+        return QJsonObject();
+    }
+    
+    // Extract key data from result
+    QVariantMap data = result.data.toMap();
+    QByteArray keyData = data["keyData"].toByteArray();
+    
+    qDebug() << "RecoverAccountFlow::exportKey() - Export SUCCESS for path:" << path;
+    
+    // Parse and validate key data
     if (keyData.isEmpty()) {
         qCritical() << "RecoverAccountFlow: Export key returned empty data!";
         return QJsonObject();
@@ -159,6 +174,7 @@ QJsonObject RecoverAccountFlow::exportKey(const QString& path, bool includePriva
         return QJsonObject();
     }
     
+    // Build result JSON
     QJsonObject keyPair;
     keyPair["publicKey"] = QString("0x") + publicKey.toHex();
     keyPair["address"] = FlowBase::publicKeyToAddress(publicKey);
@@ -170,7 +186,7 @@ QJsonObject RecoverAccountFlow::exportKey(const QString& path, bool includePriva
         return QJsonObject();
     }
     
-    qDebug() << "RecoverAccountFlow: Key exported successfully";
+    qDebug() << "RecoverAccountFlow: Key exported successfully for path:" << path;
     return keyPair;
 }
 

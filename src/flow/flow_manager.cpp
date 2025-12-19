@@ -13,9 +13,7 @@
 #include "flows/export_public_flow.h"
 #include "flows/get_metadata_flow.h"
 #include "flows/store_metadata_flow.h"
-#include <keycard-qt/keycard_channel.h>
-#include <keycard-qt/command_set.h>
-#include <keycard-qt/backends/keycard_channel_backend.h>  // For ChannelState enum
+#include <keycard-qt/communication_manager.h>
 #include <QDebug>
 #include <QMutexLocker>
 #include <QThread>
@@ -64,21 +62,16 @@ FlowManager::~FlowManager()
     cleanupFlow();
 }
 
-bool FlowManager::init(std::shared_ptr<Keycard::CommandSet> commandSet)
+bool FlowManager::init(std::shared_ptr<Keycard::CommunicationManager> commMgr)
 {
-    QMutexLocker locker(&m_mutex);
-    m_commandSet = commandSet;
-    if (m_channel != m_commandSet->channel()) {
-        disconnect(m_channel.get(), nullptr, this, nullptr);
-        m_channel = m_commandSet->channel();
+    QMutexLocker locker(&m_mutex);    
+    if (!commMgr) {
+        qCritical() << "FlowManager::init() - CommunicationManager is required!";
+        return false;
     }
+    
+    m_commMgr = commMgr;
 
-    // Connect NFC events
-    connect(m_channel.get(), &Keycard::KeycardChannel::targetDetected,
-        this, &FlowManager::onCardDetected);
-
-    connect(m_channel.get(), &Keycard::KeycardChannel::targetLost,
-        this, &FlowManager::onCardRemoved);
 
     // CRITICAL: Cancel any running flow before re-initializing
     // This prevents race conditions where a running flow tries to access destroyed objects
@@ -88,7 +81,25 @@ bool FlowManager::init(std::shared_ptr<Keycard::CommandSet> commandSet)
         // Wait for flow to fully stop (cancelFlow calls cleanupFlow which waits)
     }
 
-    qDebug() << "FlowManager: Initialized successfully";
+    // Connect to CommunicationManager card lifecycle events
+    // These signals guarantee the card is fully initialized (SELECT + secure channel ready)
+    qDebug() << "FlowManager: Connecting to CommunicationManager card lifecycle events";
+    
+    connect(m_commMgr.get(), &Keycard::CommunicationManager::cardInitialized,
+            this, [this](Keycard::CardInitializationResult result) {
+                if (result.success) {
+                    qDebug() << "FlowManager: Card initialized and ready, UID:" << result.uid;
+                    onCardDetected(result.uid);
+                } else {
+                    qWarning() << "FlowManager: Card initialization failed:" << result.error;
+                }
+            }, Qt::QueuedConnection);
+    
+    connect(m_commMgr.get(), &Keycard::CommunicationManager::cardLost,
+            this, &FlowManager::onCardRemoved, Qt::QueuedConnection);
+
+    qDebug() << "FlowManager: Initialized successfully with CommunicationManager";
+    qDebug() << "FlowManager: CommunicationManager:" << (m_commMgr ? "YES" : "NO");
     return true;
 }
 
@@ -99,7 +110,7 @@ bool FlowManager::startFlow(int flowType, const QJsonObject& params)
     qDebug() << "FlowManager: Starting flow type:" << flowType << "params:" << params;
     
     // Check if initialized
-    if (!m_commandSet || !m_channel) {
+    if (!m_commMgr) {
         m_lastError = "FlowManager not initialized";
         qWarning() << "FlowManager: Cannot start flow - not initialized";
         return false;
@@ -330,7 +341,7 @@ void FlowManager::onFlowError(const QString& error)
     result[FlowParams::ERROR_KEY] = error;
     
     // Include card info if available (from CommandSet's ApplicationInfo)
-    if (m_commandSet) {
+    if (m_commMgr) {
         QJsonObject cardInfo = buildCardInfoFromCommandSet();
         // Merge card info into result
         for (auto it = cardInfo.begin(); it != cardInfo.end(); ++it) {
@@ -467,12 +478,6 @@ void FlowManager::cleanupFlow()
 {
     qDebug() << "FlowManager: Cleaning up flow";
     
-    // Interrupt any waiting operations by disconnecting channel
-    // This will cause waitForCard() to exit immediately
-    if (m_channel) {
-        m_channel->setState(Keycard::ChannelState::Idle);
-    }
-    
     // Wait for async flow execution to complete before cleaning up
     if (m_flowFuture.isValid() && !m_flowFuture.isFinished()) {
         qDebug() << "FlowManager: Waiting for async flow to finish...";
@@ -484,8 +489,8 @@ void FlowManager::cleanupFlow()
     
     // iOS: Clear cached authentication state for security
     // Cached PIN should only persist within a single flow
-    if (m_commandSet) {
-        m_commandSet->clearAuthenticationCache();
+    if (m_commMgr && m_commMgr->commandSet()) {
+        m_commMgr->commandSet()->clearAuthenticationCache();
     }
     
     // Don't stop detection - it runs continuously
@@ -513,13 +518,13 @@ QJsonObject FlowManager::buildCardInfoFromCommandSet() const
     // (matches Go's behavior of including card identifiers in error responses)
     QJsonObject json;
     
-    if (!m_commandSet) {
+    if (!m_commMgr) {
         return json;
     }
     
     try {
         // Get ApplicationInfo from last SELECT
-        Keycard::ApplicationInfo appInfo = m_commandSet->applicationInfo();
+        Keycard::ApplicationInfo appInfo = m_commMgr->applicationInfo();
         
         if (!appInfo.instanceUID.isEmpty()) {
             json[FlowParams::INSTANCE_UID] = QString::fromLatin1(appInfo.instanceUID.toHex());
@@ -535,8 +540,8 @@ QJsonObject FlowManager::buildCardInfoFromCommandSet() const
         
         // Get PIN/PUK retries from cached status (non-blocking)
         // Matching Go: if f.cardInfo.pinRetries != -1 { status[PINRetries] = ...; status[PUKRetries] = ... }
-        if (m_commandSet->hasCachedStatus()) {
-            Keycard::ApplicationStatus status = m_commandSet->cachedApplicationStatus();
+        Keycard::ApplicationStatus status = m_commMgr->applicationStatus();
+        if (status.valid) {
             json[FlowParams::PIN_RETRIES] = static_cast<int>(status.pinRetryCount);
             json[FlowParams::PUK_RETRIES] = static_cast<int>(status.pukRetryCount);
         }

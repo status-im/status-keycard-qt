@@ -13,6 +13,7 @@
 namespace Keycard {
     class KeycardChannel;
     class CommandSet;
+    class CommunicationManager;
 }
 
 namespace StatusKeycard {
@@ -24,12 +25,12 @@ class FlowBase;
  * 
  * Singleton class that:
  * - Manages flow lifecycle
- * - Uses KeycardChannel and shared CommandSet
- * - Handles NFC events (card detected/removed)
+ * - Uses CommunicationManager for thread-safe, queued card operations
+ * - Handles card lifecycle events (cardInitialized/cardLost)
  * - Routes signals to/from flows
  * - Integrates with C API
  * 
- * Thread-safe.
+ * Thread-safe. Phase 4: CommunicationManager is now required.
  */
 class FlowManager : public QObject {
     Q_OBJECT
@@ -50,10 +51,19 @@ public:
     
     /**
      * @brief Initialize flow system
-     * @param commandSet Shared CommandSet for sharing with SessionManager
+     * @param commandSet Shared CommandSet for card operations (REQUIRED)
+     * @param commMgr CommunicationManager for thread-safe, queued operations (REQUIRED)
      * @return true if successful
+     * 
+     * Phase 4: Both parameters are now required. The CommunicationManager
+     * ensures all card operations are properly queued and serialized,
+     * eliminating race conditions between Session and Flow APIs.
+     * 
+     * Card lifecycle events are handled via CommunicationManager signals:
+     * - cardInitialized: Card fully ready (SELECT + secure channel established)
+     * - cardLost: Card removed, flows will be cancelled
      */
-    bool init(std::shared_ptr<Keycard::CommandSet> commandSet);
+    bool init(std::shared_ptr<Keycard::CommunicationManager> commMgr);
     
     /**
      * @brief Start a flow
@@ -108,6 +118,16 @@ public:
      * across multiple flows, matching status-keycard-go's behavior.
      */
     std::shared_ptr<Keycard::CommandSet> commandSet() const { return m_commandSet; }
+    
+    /**
+     * @brief Get communication manager (for queued operations)
+     * 
+     * Returns the CommunicationManager for thread-safe, queued card operations.
+     * Phase 4: Always available after successful init().
+     * 
+     * @return CommunicationManager (guaranteed non-null after init)
+     */
+    std::shared_ptr<Keycard::CommunicationManager> communicationManager() const { return m_commMgr; }
     
 signals:
     /**
@@ -194,6 +214,7 @@ private:
     // Resources
     std::shared_ptr<Keycard::KeycardChannel> m_channel;
     std::shared_ptr<Keycard::CommandSet> m_commandSet;  // Shared command set (maintains secure channel)
+    std::shared_ptr<Keycard::CommunicationManager> m_commMgr;  // Communication manager for queued operations
     
     // Thread safety
     mutable QMutex m_mutex;

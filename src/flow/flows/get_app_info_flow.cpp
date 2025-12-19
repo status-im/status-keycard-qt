@@ -2,6 +2,8 @@
 #include "../flow_manager.h"
 #include "../flow_params.h"
 #include <keycard-qt/command_set.h>
+#include <keycard-qt/communication_manager.h>
+#include <keycard-qt/card_command.h>
 #include <keycard-qt/types.h>
 #include <keycard-qt/keycard_channel.h>
 #include <QDebug>
@@ -42,27 +44,33 @@ QJsonObject GetAppInfoFlow::execute()
         // Factory reset does NOT require authentication or PIN
         // (matches status-keycard-go behavior - only requires SELECT)
         
-        // Execute factory reset via CommandSet
-        auto cmdSet = commandSet();
-        if (!cmdSet || !cmdSet->factoryReset()) {
-            qWarning() << "GetAppInfoFlow: Factory reset failed:" << (cmdSet ? cmdSet->lastError() : "No CommandSet");
+        // Phase 6: CommunicationManager is always available
+        auto commMgr = communicationManager();
+        if (!commMgr) {
+            qCritical() << "GetAppInfoFlow: CommunicationManager not available";
             QJsonObject error;
             error[FlowParams::ERROR_KEY] = "factory-reset-failed";
             return error;
         }
+        
+        auto cmd = std::make_unique<Keycard::FactoryResetCommand>();
+        Keycard::CommandResult result = commMgr->executeCommandSync(std::move(cmd), 60000);
+        
+        if (!result.success) {
+            qWarning() << "GetAppInfoFlow: Factory reset failed:" << result.error;
+            QJsonObject error;
+            error[FlowParams::ERROR_KEY] = "factory-reset-failed";
+            return error;
+        }
+        
+        qDebug() << "GetAppInfoFlow: Factory reset SUCCESS";
 
+        // Verify factory reset worked
         if (cardInfo().initialized) {
             QJsonObject error;
             error[FlowParams::ERROR_KEY] = "factory-reset-failed";
             return error;
         }
-                
-        // After factory reset, card session must be reset (all platforms)
-        // On Android: disconnect() stops reader mode, forceScan() restarts it -> fresh IsoDep session
-        // On iOS/PCSC: disconnect() closes connection, forceScan() triggers re-detection
-        qDebug() << "GetAppInfoFlow: Disconnecting and forcing card re-scan";
-        channel()->disconnect();
-        channel()->forceScan();
 
         selectKeycard();
     }
@@ -81,6 +89,10 @@ QJsonObject GetAppInfoFlow::execute()
     QJsonObject result;
     result[FlowParams::ERROR_KEY] = "ok";
     result[FlowParams::APP_INFO] = appInfo;
+
+    if (!cardInfo().initialized) {
+        return result;
+    }
     
     // 4. Try to authenticate (to check if paired)
     //    This may pause for pairing password or PIN

@@ -13,6 +13,7 @@
 // Forward declarations
 namespace Keycard {
     class KeycardChannel;
+    class CommunicationManager;
 }
 
 namespace StatusKeycard {
@@ -105,11 +106,6 @@ protected:
     // ============================================================================
     
     /**
-     * @brief Get keycard channel
-     */
-    Keycard::KeycardChannel* channel() const;
-    
-    /**
      * @brief Get pairing storage
      */
     PairingStorage* storage() const;
@@ -119,6 +115,19 @@ protected:
      * @return CommandSet for card operations (shared across all flows)
      */
     std::shared_ptr<Keycard::CommandSet> commandSet() const;
+    
+    /**
+     * @brief Get communication manager (for queued operations)
+     * @return CommunicationManager or nullptr if not available
+     * 
+     * Flows should prefer using CommunicationManager when available for:
+     * - Thread-safe command execution
+     * - Automatic command queuing
+     * - Built-in error recovery
+     * 
+     * Falls back to direct CommandSet access if not available.
+     */
+    std::shared_ptr<Keycard::CommunicationManager> communicationManager() const;
     
     /**
      * @brief Get flow parameters

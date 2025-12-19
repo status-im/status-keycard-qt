@@ -156,17 +156,21 @@ void SessionManager::onCardInitialized(Keycard::CardInitializationResult result)
     qDebug() << "SessionManager: CARD INITIALIZED";
     qDebug() << "========================================";
     
-    if (!result.success) {
-        qWarning() << "SessionManager: Card initialization failed:" << result.error;
-        setError(result.error);
-        setState(SessionState::ConnectionError);
-        return;
-    }
-    
     // Update cached state from CommunicationManager
     m_currentCardUID = result.uid;
     m_appInfo = result.appInfo;
     m_appStatus = result.appStatus;
+
+    if (!result.success) {
+        qWarning() << "SessionManager: Card initialization failed:" << result.error;
+        if (result.appInfo.availableSlots == 0) {
+            setState(SessionState::NoAvailablePairingSlots);
+        } else {
+            setState(SessionState::ConnectionError);
+            setError(result.error);
+        }
+        return;
+    }
     
     // Determine state based on card status
     if (!result.appInfo.initialized) {
@@ -487,6 +491,7 @@ bool SessionManager::factoryReset()
     
     if (!result.success) {
         setError(result.error);
+        setState(SessionState::InternalError);
         return false;
     }
     
@@ -645,6 +650,7 @@ QByteArray SessionManager::exportKeyInternal(bool derive, bool makeCurrent, cons
     
     if (!result.success) {
         setError(result.error);
+        setState(SessionState::InternalError);
         return QByteArray();
     }
     

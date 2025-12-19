@@ -48,8 +48,11 @@ private slots:
         connect(m_manager, &SessionManager::stateChanged,
                 this, &TestSessionManager::onStateChanged);
         
+        // Create mock CommandSet and CommunicationManager
         auto cmdSet = createMockCommandSet();
-        m_manager->setCommandSet(cmdSet);
+        auto commMgr = std::make_shared<Keycard::CommunicationManager>();
+        commMgr->init(cmdSet);
+        m_manager->setCommunicationManager(commMgr);
     }
 
     void cleanup()
