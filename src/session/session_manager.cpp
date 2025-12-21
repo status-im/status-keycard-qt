@@ -139,10 +139,6 @@ void SessionManager::setState(SessionState newState)
 {
     qDebug() << "SessionManager::setState() - New state: "<< sessionStateToString(newState);
     
-    if (newState == m_state) {
-        return;
-    }
-    
     SessionState oldState = m_state;
     m_state = newState;
     
@@ -638,6 +634,8 @@ static SessionManager::KeyPair parseExportedKey(const QByteArray& data) {
 }
 
 // Helper methods for exporting keys
+// These use executeCommandSync, which is safe within batch operations mode
+// (batch mode prevents channel stop/start cycles)
 QByteArray SessionManager::exportKeyInternal(bool derive, bool makeCurrent, const QString& path, uint8_t exportType)
 {
     if (!m_commMgr) {
@@ -697,17 +695,22 @@ SessionManager::LoginKeys SessionManager::exportLoginKeys(bool isMainCommand)
         return keys;
     }
 
-    qDebug() << "SessionManager: Exporting whisper key from path:" << PATH_WHISPER;
-    QByteArray whisperData = exportKeyInternal(true, true, PATH_WHISPER, Keycard::APDU::P2ExportKeyPrivateAndPublic);
-    if (whisperData.isEmpty()) {
-        setError(QString("Failed to export whisper key: %1").arg(m_lastError));
-        return keys;
+    // Start batch operations only if this is the main command (not called from exportRecoverKeys)
+    if (isMainCommand) {
+        m_commMgr->startBatchOperations();
     }
-    qDebug() << "SessionManager: Whisper key data size:" << whisperData.size();
-    keys.whisperPrivateKey = parseExportedKey(whisperData);
-
-    // Export encryption private key
-    // Now we can use makeCurrent=false since the whisper export already set the card state
+    
+    // Ensure we always end batch operations, even on error (only if we started it)
+    // Lambda must accept pointer argument for unique_ptr deleter
+    auto batchGuard = [this, isMainCommand](void*) { 
+        if (isMainCommand) {
+            m_commMgr->endBatchOperations(); 
+        }
+    };
+    std::unique_ptr<void, decltype(batchGuard)> guard(reinterpret_cast<void*>(1), batchGuard);
+    
+    // Export encryption private key FIRST (matching status-keycard-go order)
+    // Note: makeCurrent=false for all paths except master "m" (matching status-keycard-go)
     qDebug() << "SessionManager: Exporting encryption key from path:" << PATH_ENCRYPTION;
     QByteArray encryptionData = exportKeyInternal(true, false, PATH_ENCRYPTION, Keycard::APDU::P2ExportKeyPrivateAndPublic);
     if (encryptionData.isEmpty()) {
@@ -716,6 +719,16 @@ SessionManager::LoginKeys SessionManager::exportLoginKeys(bool isMainCommand)
     }
     qDebug() << "SessionManager: Encryption key data size:" << encryptionData.size();
     keys.encryptionPrivateKey = parseExportedKey(encryptionData);
+
+    // Export whisper private key SECOND (matching status-keycard-go order)
+    qDebug() << "SessionManager: Exporting whisper key from path:" << PATH_WHISPER;
+    QByteArray whisperData = exportKeyInternal(true, false, PATH_WHISPER, Keycard::APDU::P2ExportKeyPrivateAndPublic);
+    if (whisperData.isEmpty()) {
+        setError(QString("Failed to export whisper key: %1").arg(m_lastError));
+        return keys;
+    }
+    qDebug() << "SessionManager: Whisper key data size:" << whisperData.size();
+    keys.whisperPrivateKey = parseExportedKey(whisperData);
     
     qDebug() << "SessionManager: Login keys exported successfully";
     
@@ -742,6 +755,14 @@ SessionManager::RecoverKeys SessionManager::exportRecoverKeys()
         return keys;
     }
     
+    // Start batch operations to keep channel open during all exports
+    m_commMgr->startBatchOperations();
+    
+    // Ensure we always end batch operations, even on error
+    // Lambda must accept pointer argument for unique_ptr deleter
+    auto batchGuard = [this](void*) { m_commMgr->endBatchOperations(); };
+    std::unique_ptr<void, decltype(batchGuard)> guard(reinterpret_cast<void*>(1), batchGuard);
+    
     qDebug() << "SessionManager: Exporting recover keys";
     
     // First export login keys
@@ -751,7 +772,7 @@ SessionManager::RecoverKeys SessionManager::exportRecoverKeys()
     }
     
     // Export EIP1581 key (public only)
-    QByteArray eip1581Data = exportKeyInternal(true, false, PATH_EIP1581);
+    QByteArray eip1581Data = exportKeyInternal(true, false, PATH_EIP1581, Keycard::APDU::P2ExportKeyPublicOnly);
     if (eip1581Data.isEmpty()) {
         setError(QString("Failed to export EIP1581 key: %1").arg(m_lastError));
         return keys;
@@ -763,7 +784,7 @@ SessionManager::RecoverKeys SessionManager::exportRecoverKeys()
     bool supportsExtended = m_appInfo.appVersion >= 3 && m_appInfo.appVersionMinor >= 1;
     QByteArray walletRootData = supportsExtended ?
         exportKeyExtendedInternal(true, false, PATH_WALLET_ROOT) :
-        exportKeyInternal(true, false, PATH_WALLET_ROOT);
+        exportKeyInternal(true, false, PATH_WALLET_ROOT, Keycard::APDU::P2ExportKeyPublicOnly);
     
     if (walletRootData.isEmpty()) {
         setError(QString("Failed to export wallet root key: %1").arg(m_lastError));
@@ -772,15 +793,15 @@ SessionManager::RecoverKeys SessionManager::exportRecoverKeys()
     keys.walletRootKey = parseExportedKey(walletRootData);
     
     // Export wallet key (public only)
-    QByteArray walletData = exportKeyInternal(true, false, PATH_WALLET);
+    QByteArray walletData = exportKeyInternal(true, false, PATH_WALLET, Keycard::APDU::P2ExportKeyPublicOnly);
     if (walletData.isEmpty()) {
         setError(QString("Failed to export wallet key: %1").arg(m_lastError));
         return keys;
     }
     keys.walletKey = parseExportedKey(walletData);
     
-    // Export master key (public only, makeCurrent=true for compatibility)
-    QByteArray masterData = exportKeyInternal(true, true, PATH_MASTER);
+    // Export master key (public only, derive=false since "m" doesn't need derivation)
+    QByteArray masterData = exportKeyInternal(false, false, PATH_MASTER, Keycard::APDU::P2ExportKeyPublicOnly);
     if (masterData.isEmpty()) {
         setError(QString("Failed to export master key: %1").arg(m_lastError));
         return keys;
@@ -806,19 +827,20 @@ SessionManager::Metadata SessionManager::getMetadata(bool isMainCommand)
         return metadata;
     }
     
-    // Get metadata from card (matching status-keycard-go GetMetadata)
+    // Get metadata from card using proper command queue (matching status-keycard-go GetMetadata)
     qDebug() << "SessionManager: Getting metadata from card";
-    QByteArray metadataData = m_commMgr->getDataFromCard(Keycard::APDU::P1StoreDataPublic);  // 0x00
     
-    // Check if data looks like a status word (error response)
-    if (metadataData.size() == 2) {
-        uint16_t sw = (static_cast<uint8_t>(metadataData[0]) << 8) | static_cast<uint8_t>(metadataData[1]);
-        if (sw != 0x9000) {  // Not success
-            qDebug() << "SessionManager: Card returned status word:" << QString("0x%1").arg(sw, 4, 16, QChar('0'));
-            qDebug() << "SessionManager: No metadata on card (error or empty)";
-            return metadata;
-        }
+    auto cmd = std::make_unique<Keycard::GetMetadataCommand>();
+    Keycard::CommandResult result = m_commMgr->executeCommandSync(std::move(cmd), 30000);
+    
+    if (!result.success) {
+        // Not an error - might just be empty
+        qDebug() << "SessionManager: No metadata on card or error:" << result.error;
+        return metadata;
     }
+    
+    QVariantMap data = result.data.toMap();
+    QByteArray metadataData = data["tlvData"].toByteArray();
     
     if (metadataData.isEmpty()) {
         // Not an error - card might not have metadata yet
@@ -919,26 +941,16 @@ bool SessionManager::storeMetadata(const QString& name, const QStringList& paths
         return false;
     }
     
-    // Encode metadata using common utility
-    QString errorMsg;
-    QByteArray metadata = Keycard::MetadataEncoding::encode(name, paths, errorMsg);
+    // Store metadata using proper command queue
+    auto cmd = std::make_unique<Keycard::StoreMetadataCommand>(name, paths);
+    Keycard::CommandResult result = m_commMgr->executeCommandSync(std::move(cmd), 30000);
     
-    if (metadata.isEmpty()) {
-        setError(errorMsg);
+    if (!result.success) {
+        setError(QString("Failed to store metadata: %1").arg(result.error));
         return false;
     }
     
-    qDebug() << "SessionManager: Encoded metadata size:" << metadata.size() << "bytes";
-    qDebug() << "SessionManager: Metadata hex:" << metadata.toHex();
-    
-    // Store metadata on card (public data type)
-    // Use P1StoreDataPublic (0x00) as defined in status-keycard-go
-    bool success = m_commMgr->storeDataToCard(0x00, metadata);  // 0x00 = P1StoreDataPublic
-    
-    if (!success) {
-        setError("Failed to store metadata");
-        return false;
-    }
+    qDebug() << "SessionManager: Metadata stored successfully";
 
     m_metadata.name = name;
     for (const QString& path : paths) {

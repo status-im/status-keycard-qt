@@ -53,7 +53,21 @@ QJsonObject RecoverAccountFlow::execute()
         return error;
     }
     
-    // 6. Export encryption key (with private key)
+    // Start batch operations to keep channel open during all 6 exports
+    auto commMgr = communicationManager();
+    if (commMgr) {
+        commMgr->startBatchOperations();
+    }
+    
+    // RAII guard ensures batch operations are ended on all exit paths
+    auto batchGuard = [commMgr](void*) {
+        if (commMgr) {
+            commMgr->endBatchOperations();
+        }
+    };
+    std::unique_ptr<void, decltype(batchGuard)> guard(reinterpret_cast<void*>(1), batchGuard);
+    
+    // 6. Export encryption key (with private key) - FIRST to match status-keycard-go order
     qDebug() << "RecoverAccountFlow: Exporting encryption key...";
     QJsonObject encKey = exportKey(ENCRYPTION_PATH, true);
     if (encKey.isEmpty()) {
@@ -63,7 +77,7 @@ QJsonObject RecoverAccountFlow::execute()
         return error;
     }
     
-    // 7. Export whisper key (with private key)
+    // 7. Export whisper key (with private key) - SECOND to match status-keycard-go order
     qDebug() << "RecoverAccountFlow: Exporting whisper key...";
     QJsonObject whisperKey = exportKey(WHISPER_PATH, true);
     if (whisperKey.isEmpty()) {

@@ -50,7 +50,21 @@ QJsonObject LoginFlow::execute()
         return error;
     }
     
-    // 4. Export encryption key (with private key)
+    // Start batch operations to keep channel open during 2 exports
+    auto commMgr = communicationManager();
+    if (commMgr) {
+        commMgr->startBatchOperations();
+    }
+    
+    // RAII guard ensures batch operations are ended on all exit paths
+    auto batchGuard = [commMgr](void*) {
+        if (commMgr) {
+            commMgr->endBatchOperations();
+        }
+    };
+    std::unique_ptr<void, decltype(batchGuard)> guard(reinterpret_cast<void*>(1), batchGuard);
+    
+    // 4. Export encryption key (with private key) - FIRST to match status-keycard-go order
     qDebug() << "LoginFlow: Exporting encryption key...";
     QJsonObject encKey = exportKey(ENCRYPTION_PATH, true);
     if (encKey.isEmpty()) {
@@ -60,7 +74,7 @@ QJsonObject LoginFlow::execute()
         return error;
     }
     
-    // 5. Export whisper key (with private key)
+    // 5. Export whisper key (with private key) - SECOND to match status-keycard-go order
     qDebug() << "LoginFlow: Exporting whisper key...";
     QJsonObject whisperKey = exportKey(WHISPER_PATH, true);
     if (whisperKey.isEmpty()) {
