@@ -1,11 +1,13 @@
 #include <QtTest/QtTest>
 #include <QTemporaryDir>
+#include <QtConcurrent>
 #include "session/session_manager.h"
 #include "session/session_state.h"
 #include "mocks/mock_keycard_backend.h"
 #include <keycard-qt/keycard_channel.h>
 #include <keycard-qt/command_set.h>
 #include <memory>
+#include <atomic>
 
 using namespace StatusKeycard;
 using namespace StatusKeycardTest;
@@ -208,6 +210,59 @@ private slots:
         for (const auto& change : m_stateChanges) {
             QVERIFY(change.first != change.second);
         }
+    }
+
+    // ========================================================================
+    // Threading and CommunicationManager Integration Tests (New)
+    // ========================================================================
+
+    void testConcurrentStateAccess()
+    {
+        m_manager->start();
+        QTest::qWait(200);
+        
+        // Multiple threads reading state concurrently - validates thread safety
+        std::atomic<int> readCount{0};
+        QList<QFuture<void>> futures;
+        
+        for (int i = 0; i < 5; i++) {
+            auto future = QtConcurrent::run([this, &readCount]() {
+                for (int j = 0; j < 20; j++) {
+                    SessionState state = m_manager->currentState();
+                    Q_UNUSED(state);
+                    readCount++;
+                }
+            });
+            futures.append(future);
+        }
+        
+        for (auto& future : futures) {
+            QVERIFY(future.waitForFinished(5000));
+        }
+        
+        QCOMPARE(readCount.load(), 100);
+    }
+
+    void testMultipleStartCalls()
+    {
+        // Multiple start calls should be idempotent
+        for (int i = 0; i < 3; i++) {
+            bool result = m_manager->start();
+            QVERIFY(result);
+        }
+        
+        QVERIFY(m_manager->isStarted());
+    }
+
+    void testStopDuringOperation()
+    {
+        m_manager->start();
+        QTest::qWait(100);
+        
+        // Stop should be safe even during state transitions
+        m_manager->stop();
+        
+        QVERIFY(!m_manager->isStarted());
     }
 };
 
