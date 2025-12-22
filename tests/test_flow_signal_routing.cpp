@@ -10,6 +10,7 @@
 #include "mocks/mock_keycard_backend.h"
 #include <keycard-qt/keycard_channel.h>
 #include <keycard-qt/command_set.h>
+#include <keycard-qt/communication_manager.h>
 #include <memory>
 
 using namespace StatusKeycard;

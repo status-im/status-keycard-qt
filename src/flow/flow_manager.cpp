@@ -62,7 +62,7 @@ FlowManager::~FlowManager()
     cleanupFlow();
 }
 
-bool FlowManager::init(std::shared_ptr<Keycard::CommunicationManager> commMgr)
+bool FlowManager::init(std::shared_ptr<Keycard::ICommunicationManager> commMgr)
 {
     QMutexLocker locker(&m_mutex);    
     if (!commMgr) {
@@ -85,7 +85,7 @@ bool FlowManager::init(std::shared_ptr<Keycard::CommunicationManager> commMgr)
     // These signals guarantee the card is fully initialized (SELECT + secure channel ready)
     qDebug() << "FlowManager: Connecting to CommunicationManager card lifecycle events";
     
-    connect(m_commMgr.get(), &Keycard::CommunicationManager::cardInitialized,
+    connect(m_commMgr.get(), &Keycard::ICommunicationManager::cardInitialized,
             this, [this](Keycard::CardInitializationResult result) {
                 if (result.success) {
                     qDebug() << "FlowManager: Card initialized and ready, UID:" << result.uid;
@@ -95,7 +95,7 @@ bool FlowManager::init(std::shared_ptr<Keycard::CommunicationManager> commMgr)
                 }
             }, Qt::QueuedConnection);
     
-    connect(m_commMgr.get(), &Keycard::CommunicationManager::cardLost,
+    connect(m_commMgr.get(), &Keycard::ICommunicationManager::cardLost,
             this, &FlowManager::onCardRemoved, Qt::QueuedConnection);
 
     qDebug() << "FlowManager: Initialized successfully with CommunicationManager";

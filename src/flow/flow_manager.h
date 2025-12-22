@@ -13,7 +13,7 @@
 namespace Keycard {
     class KeycardChannel;
     class CommandSet;
-    class CommunicationManager;
+    class ICommunicationManager;
 }
 
 namespace StatusKeycard {
@@ -63,7 +63,7 @@ public:
      * - cardInitialized: Card fully ready (SELECT + secure channel established)
      * - cardLost: Card removed, flows will be cancelled
      */
-    bool init(std::shared_ptr<Keycard::CommunicationManager> commMgr);
+    bool init(std::shared_ptr<Keycard::ICommunicationManager> commMgr);
     
     /**
      * @brief Start a flow
@@ -127,7 +127,7 @@ public:
      * 
      * @return CommunicationManager (guaranteed non-null after init)
      */
-    std::shared_ptr<Keycard::CommunicationManager> communicationManager() const { return m_commMgr; }
+    std::shared_ptr<Keycard::ICommunicationManager> communicationManager() const { return m_commMgr; }
     
 signals:
     /**
@@ -214,7 +214,7 @@ private:
     // Resources
     std::shared_ptr<Keycard::KeycardChannel> m_channel;
     std::shared_ptr<Keycard::CommandSet> m_commandSet;  // Shared command set (maintains secure channel)
-    std::shared_ptr<Keycard::CommunicationManager> m_commMgr;  // Communication manager for queued operations
+    std::shared_ptr<Keycard::ICommunicationManager> m_commMgr;  // Communication manager for queued operations
     
     // Thread safety
     mutable QMutex m_mutex;

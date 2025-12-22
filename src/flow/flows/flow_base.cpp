@@ -68,7 +68,7 @@ std::shared_ptr<Keycard::CommandSet> FlowBase::commandSet() const {
     return m_manager->commandSet();
 }
 
-std::shared_ptr<Keycard::CommunicationManager> FlowBase::communicationManager() const {
+std::shared_ptr<Keycard::ICommunicationManager> FlowBase::communicationManager() const {
     if (!m_manager) {
         qWarning() << "FlowBase::communicationManager() No FlowManager available";
         return nullptr;

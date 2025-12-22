@@ -13,7 +13,7 @@
 // Forward declarations
 namespace Keycard {
     class KeycardChannel;
-    class CommunicationManager;
+    class ICommunicationManager;
 }
 
 namespace StatusKeycard {
@@ -127,7 +127,7 @@ protected:
      * 
      * Falls back to direct CommandSet access if not available.
      */
-    std::shared_ptr<Keycard::CommunicationManager> communicationManager() const;
+    std::shared_ptr<Keycard::ICommunicationManager> communicationManager() const;
     
     /**
      * @brief Get flow parameters
