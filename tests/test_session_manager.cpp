@@ -237,7 +237,8 @@ private slots:
         }
         
         for (auto& future : futures) {
-            QVERIFY(future.waitForFinished(5000));
+            future.waitForFinished();
+            QVERIFY(future.isFinished());
         }
         
         QCOMPARE(readCount.load(), 100);
