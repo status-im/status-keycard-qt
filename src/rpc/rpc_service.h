@@ -8,7 +8,7 @@
 #include "session/session_manager.h"
 
 namespace Keycard {
-    class CommunicationManager;
+    class ICommunicationManager;
 }
 
 namespace StatusKeycard {
@@ -42,13 +42,13 @@ public:
     /**
      * @brief Get the communication manager
      */
-    std::shared_ptr<Keycard::CommunicationManager> communicationManager() { return m_commMgr; }
+    std::shared_ptr<Keycard::ICommunicationManager> communicationManager() { return m_commMgr; }
 
     /**
      * @brief Set the communication manager
-     * @param commMgr Communication manager instance
+     * @param commMgr Communication manager instance (accepts interface for flexibility)
      */
-    void setCommunicationManager(std::shared_ptr<Keycard::CommunicationManager> commMgr);
+    void setCommunicationManager(std::shared_ptr<Keycard::ICommunicationManager> commMgr);
 
 private:
     /**
@@ -84,7 +84,7 @@ private:
     QJsonObject handleExportRecoverKeys(const QString& id, const QJsonObject& params);
 
     std::unique_ptr<SessionManager> m_sessionManager;
-    std::shared_ptr<Keycard::CommunicationManager> m_commMgr;
+    std::shared_ptr<Keycard::ICommunicationManager> m_commMgr;
 };
 
 } // namespace StatusKeycard

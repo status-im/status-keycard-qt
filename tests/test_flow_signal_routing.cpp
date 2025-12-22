@@ -64,7 +64,7 @@ private slots:
         auto cmdSet = createMockCommandSet();
         auto commMgr = std::make_shared<Keycard::CommunicationManager>();
         commMgr->init(cmdSet);
-        bool success = FlowManager::instance()->init(cmdSet, commMgr);
+        bool success = FlowManager::instance()->init(commMgr);
         QVERIFY(success);
         
         QObject::connect(FlowManager::instance(), &FlowManager::flowSignal,

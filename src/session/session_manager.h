@@ -1,9 +1,8 @@
 #pragma once
 
 #include "session_state.h"
-#include <keycard-qt/keycard_channel.h>
-#include <keycard-qt/command_set.h>
-#include <keycard-qt/communication_manager.h>
+#include <keycard-qt/i_communication_manager.h>
+#include <keycard-qt/types.h>
 #include <QObject>
 #include <QTimer>
 #include <QMutex>
@@ -34,9 +33,11 @@ public:
      * Must be called before start().
      * The CommunicationManager should be created and started by the caller
      * (e.g., RPC service) with the channel and dependencies.
+     * 
+     * Accepts ICommunicationManager interface for testability.
      */
-    void setCommunicationManager(std::shared_ptr<Keycard::CommunicationManager> commMgr);
-    std::shared_ptr<Keycard::CommunicationManager> communicationManager() const { return m_commMgr; }
+    void setCommunicationManager(std::shared_ptr<Keycard::ICommunicationManager> commMgr);
+    std::shared_ptr<Keycard::ICommunicationManager> communicationManager() const { return m_commMgr; }
 
     // Session lifecycle
     bool start(bool logEnabled = false, const QString& logFilePath = QString());
@@ -139,8 +140,8 @@ signals:
     void stateChanged(SessionState newState, SessionState oldState);
     void error(const QString& message);
 
-private slots:
-    void onCardInitialized(Keycard::CardInitializationResult result);
+public slots:
+    void onCardInitialized(const Keycard::CardInitializationResult& result);
     void onCardRemoved();
 
 private:
@@ -156,8 +157,8 @@ private:
     bool m_started;
     QString m_lastError;
     
-    // Keycard components
-    std::shared_ptr<Keycard::CommunicationManager> m_commMgr;
+    // Keycard components (uses interface for testability)
+    std::shared_ptr<Keycard::ICommunicationManager> m_commMgr;
     
     // Cached card state
     Keycard::ApplicationInfo m_appInfo;

@@ -17,7 +17,7 @@ RpcService::RpcService(QObject* parent)
 
 RpcService::~RpcService() = default;
 
-void RpcService::setCommunicationManager(std::shared_ptr<Keycard::CommunicationManager> commMgr) {
+void RpcService::setCommunicationManager(std::shared_ptr<Keycard::ICommunicationManager> commMgr) {
     qDebug() << "RpcService: Setting CommunicationManager for SessionManager";
     m_commMgr = commMgr;
     if (m_sessionManager) {

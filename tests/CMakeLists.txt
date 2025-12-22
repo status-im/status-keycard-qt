@@ -33,7 +33,7 @@ endfunction()
 
 # Add test executables
 add_keycard_test(test_rpc_service)
-add_keycard_test(test_session_manager mocks/mock_keycard_backend.cpp)
+add_keycard_test(test_session_manager mocks/mock_communication_manager.cpp)
 add_keycard_test(test_signal_manager)
 
 # Flow API tests (pure logic - NO hardware, runs instantly)

@@ -3,6 +3,7 @@
 #include <keycard-qt/types.h>
 #include <keycard-qt/tlv_utils.h>
 #include <keycard-qt/metadata_utils.h>
+#include <keycard-qt/i_communication_manager.h>
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QJsonArray>
@@ -64,7 +65,7 @@ SessionManager::~SessionManager()
 
 // Removed: startCardOperation() and operationCompleted() - not needed with CommunicationManager
 
-void SessionManager::setCommunicationManager(std::shared_ptr<Keycard::CommunicationManager> commMgr)
+void SessionManager::setCommunicationManager(std::shared_ptr<Keycard::ICommunicationManager> commMgr)
 {
     if (m_started) {
         qWarning() << "SessionManager: Cannot set CommunicationManager while started";
@@ -94,13 +95,14 @@ bool SessionManager::start(bool logEnabled, const QString& logFilePath)
     QObject::disconnect(m_commMgr.get(), nullptr, this, nullptr);
     
     // Connect to CommunicationManager signals
-    connect(m_commMgr.get(), &Keycard::CommunicationManager::cardInitialized,
+    // Use AutoConnection - direct if same thread, queued if cross-thread
+    connect(m_commMgr.get(), &Keycard::ICommunicationManager::cardInitialized,
             this, &SessionManager::onCardInitialized,
-            Qt::QueuedConnection);
+            Qt::AutoConnection);
     
-    connect(m_commMgr.get(), &Keycard::CommunicationManager::cardLost,
+    connect(m_commMgr.get(), &Keycard::ICommunicationManager::cardLost,
             this, &SessionManager::onCardRemoved,
-            Qt::QueuedConnection);
+            Qt::AutoConnection);
     
     // Start card detection (CommunicationManager should already be init'd by caller)
     if (!m_commMgr->startDetection()) {
@@ -146,7 +148,7 @@ void SessionManager::setState(SessionState newState)
     emit stateChanged(newState, oldState);
 }
 
-void SessionManager::onCardInitialized(Keycard::CardInitializationResult result)
+void SessionManager::onCardInitialized(const Keycard::CardInitializationResult& result)
 {
     qDebug() << "========================================";
     qDebug() << "SessionManager: CARD INITIALIZED";
@@ -247,6 +249,11 @@ bool SessionManager::initialize(const QString& pin, const QString& puk, const QS
     qDebug() << "SessionManager::initialize()";
     QMutexLocker locker(&m_operationMutex);
     
+    if (!m_started) {
+        setError("SessionManager not started");
+        return false;
+    }
+    
     if (!m_commMgr) {
         setError("No communication manager available");
         return false;
@@ -270,6 +277,11 @@ bool SessionManager::initialize(const QString& pin, const QString& puk, const QS
 bool SessionManager::authorize(const QString& pin)
 {
     qDebug() << "SessionManager::authorize() - Thread:" << QThread::currentThread();
+    
+    if (!m_started) {
+        setError("SessionManager not started");
+        return false;
+    }
     
     if (!m_commMgr) {
         setError("No communication manager available");
@@ -301,6 +313,11 @@ bool SessionManager::changePIN(const QString& newPIN)
 {
     QMutexLocker locker(&m_operationMutex);
 
+    if (!m_started) {
+        setError("SessionManager not started");
+        return false;
+    }
+
     if (!m_commMgr) {
         setError("No communication manager available");
         return false;
@@ -327,6 +344,11 @@ bool SessionManager::changePUK(const QString& newPUK)
 {
     QMutexLocker locker(&m_operationMutex);
 
+    if (!m_started) {
+        setError("SessionManager not started");
+        return false;
+    }
+
     if (!m_commMgr) {
         setError("No communication manager available");
         return false;
@@ -352,6 +374,11 @@ bool SessionManager::changePUK(const QString& newPUK)
 bool SessionManager::unblockPIN(const QString& puk, const QString& newPIN)
 {
     QMutexLocker locker(&m_operationMutex);
+
+    if (!m_started) {
+        setError("SessionManager not started");
+        return false;
+    }
 
     if (!m_commMgr) {
         setError("No communication manager available");
@@ -380,6 +407,11 @@ bool SessionManager::unblockPIN(const QString& puk, const QString& newPIN)
 QVector<int> SessionManager::generateMnemonic(int length)
 {
     QMutexLocker locker(&m_operationMutex);
+
+    if (!m_started) {
+        setError("SessionManager not started");
+        return QVector<int>();
+    }
 
     if (!m_commMgr) {
         setError("No communication manager available");
@@ -411,6 +443,11 @@ QVector<int> SessionManager::generateMnemonic(int length)
 QString SessionManager::loadMnemonic(const QString& mnemonic, const QString& passphrase)
 {
     QMutexLocker locker(&m_operationMutex);
+    
+    if (!m_started) {
+        setError("SessionManager not started");
+        return QString();
+    }
     
     if (!m_commMgr) {
         setError("No communication manager available");
@@ -474,6 +511,11 @@ QString SessionManager::loadMnemonic(const QString& mnemonic, const QString& pas
 bool SessionManager::factoryReset()
 {
     QMutexLocker locker(&m_operationMutex);
+    
+    if (!m_started) {
+        setError("SessionManager not started");
+        return false;
+    }
     
     if (!m_commMgr) {
         setError("No communication manager available");
