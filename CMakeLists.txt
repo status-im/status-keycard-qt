@@ -66,7 +66,7 @@ else()
     FetchContent_Declare(
       keycard-qt
       GIT_REPOSITORY https://github.com/status-im/keycard-qt
-      GIT_TAG master  # TODO: Update to specific tag/commit when available
+      GIT_TAG f581845350263c776e105b9552ec8ca5dc7a74fc
     )
 endif()
 

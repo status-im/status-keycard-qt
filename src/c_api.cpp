@@ -104,6 +104,12 @@ struct StatusKeycardContextImpl {
                 case Keycard::ChannelOperationalState::Error:
                     stateStr = "error";
                     break;
+                case Keycard::ChannelOperationalState::NotSupported:
+                    stateStr = "not-supported";
+                    break;
+                case Keycard::ChannelOperationalState::NotAvailable:
+                    stateStr = "not-available";
+                    break;
             }
             qDebug() << "StatusKeycardContextImpl: Emitting channel state changed signal:" << stateStr;
             signalManager->emitChannelStateChanged(stateStr);
