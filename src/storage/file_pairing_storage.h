@@ -3,7 +3,6 @@
 #include <keycard-qt/pairing_storage.h>
 #include <QString>
 #include <QJsonObject>
-#include <QStandardPaths>
 
 namespace StatusKeycard {
 
@@ -22,13 +21,14 @@ public:
     Keycard::PairingInfo load(const QString& cardInstanceUID) override;
     bool save(const QString& cardInstanceUID, const Keycard::PairingInfo& pairing) override;
     bool remove(const QString& cardInstanceUID) override;
-    void setPath(const QString& filePath);
+    bool setPath(const QString& filePath);
 
     
 private:
-    QString m_filePath {QStandardPaths::writableLocation(QStandardPaths::AppLocalDataLocation) + "/pairings.json"};
-    
+    QString m_filePath;
+
     // Helper methods
+    bool ensureStorageExists();
     QJsonObject loadAllPairings();
     bool saveAllPairings(const QJsonObject& pairings);
 };

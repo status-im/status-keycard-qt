@@ -195,11 +195,13 @@ QJsonObject RpcService::handleStart(const QString& id, const QJsonObject& params
     if (!m_commMgr->commandSet()) {
         return createErrorResponse(id, -32000, "CommandSet not set");
     }
-    
-    // Note: Pairing storage path should be configured when creating the CommunicationManager
+
+    // Creates the parent directory and an empty {} json pairings file if doesn't exist, matching Go's NewStore() function
     if (auto pairingStorage = m_commMgr->commandSet()->pairingStorage()) {
         if (auto filePairingStorage = std::dynamic_pointer_cast<StatusKeycard::FilePairingStorage>(pairingStorage)) {
-            filePairingStorage->setPath(storagePath);
+            if (!filePairingStorage->setPath(storagePath)) {
+                return createErrorResponse(id, -32000, "Failed to create pairing storage at: " + storagePath);
+            }
         }
     }
 

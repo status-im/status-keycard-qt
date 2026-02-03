@@ -11,33 +11,48 @@ FilePairingStorage::FilePairingStorage()
 {
 }   
 
-void FilePairingStorage::setPath(const QString& filePath)
+bool FilePairingStorage::setPath(const QString& filePath)
 {
     m_filePath = filePath;
+    return ensureStorageExists();
 }
 
-QJsonObject FilePairingStorage::loadAllPairings()
+bool FilePairingStorage::ensureStorageExists()
 {
-    QFile file(m_filePath);
+    if (m_filePath.isEmpty()) {
+        qDebug() << "FilePairingStorage: Path not set yet, skipping storage operations";
+        return false;
+    }
 
-    if (!file.exists()) {
-        QFileInfo fileInfo(m_filePath);
-        QDir dir = fileInfo.dir();
-        if (!dir.exists()) {
-            if (!dir.mkpath(".")) {
-                qWarning() << "FilePairingStorage: Failed to create storage directory:" << dir.absolutePath();
-                return QJsonObject();
-            }
+    QFileInfo fileInfo(m_filePath);
+    QDir dir = fileInfo.dir();
+    if (!dir.exists()) {
+        if (!dir.mkpath(".")) {
+            qWarning() << "FilePairingStorage: Failed to create storage directory:" << dir.absolutePath();
+            return false;
         }
+    }
 
+    QFile file(m_filePath);
+    if (!file.exists()) {
         if (!file.open(QIODevice::WriteOnly)) {
             qWarning() << "FilePairingStorage: Failed to create storage file:" << m_filePath;
-            return QJsonObject();
+            return false;
         }
         file.write("{}");
         file.close();
     }
-    
+
+    return true;
+}
+
+QJsonObject FilePairingStorage::loadAllPairings()
+{
+    if (!ensureStorageExists()) {
+        return QJsonObject();
+    }
+
+    QFile file(m_filePath);
     if (!file.open(QIODevice::ReadOnly)) {
         qWarning() << "FilePairingStorage: Failed to open storage file:" << m_filePath;
         return QJsonObject();
