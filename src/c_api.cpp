@@ -34,7 +34,11 @@ struct StatusKeycardContextImpl {
         char* argv[] = {nullptr};
         
         channel = std::make_shared<Keycard::KeycardChannel>();
-        
+        // Stop detection immediately - the PCSC backend starts detection in its constructor, don't detect cards
+        // until Start() is called and the storage path is configured.
+        // SessionManager::start() will call startDetection() at the right time.
+        channel->stopDetection();
+
         pairingStorage = std::make_shared<StatusKeycard::FilePairingStorage>();
 
         // Create password provider
@@ -250,7 +254,10 @@ char* KeycardInitFlowWithContext(StatusKeycardContext ctx, const char* storageDi
     
     // Initialize FlowManager with storage directory
     if (auto fileStorage = std::dynamic_pointer_cast<StatusKeycard::FilePairingStorage>(impl->pairingStorage)) {
-        fileStorage->setPath(QString::fromUtf8(storageDir));
+        if (!fileStorage->setPath(QString::fromUtf8(storageDir))) {
+            const char* error = R"({"success": false, "error": "Failed to create pairing storage"})";
+            return strdup(error);
+        }
     }
     // Use the same unified CommandSet and CommunicationManager for FlowManager
     // This ensures flows and session operations share the same command queue
