@@ -15,7 +15,7 @@ namespace StatusKeycard {
 
 /**
  * @brief JSON-RPC service for Keycard operations
- * 
+ *
  * Implements the exact JSON-RPC interface expected by nim-keycard-go.
  * All methods match status-keycard-go's Session API.
  */
@@ -28,7 +28,7 @@ public:
 
     /**
      * @brief Process a JSON-RPC request and return JSON response
-     * 
+     *
      * @param requestJson JSON-RPC request string
      * @return JSON-RPC response string (must be freed by caller with Free())
      */
@@ -54,12 +54,12 @@ private:
     /**
      * @brief Create a JSON-RPC success response
      */
-    QJsonObject createSuccessResponse(const QString& id, const QJsonValue& result);
+    QJsonObject createSuccessResponse(quint64 id, const QJsonValue& result);
 
     /**
      * @brief Create a JSON-RPC error response
      */
-    QJsonObject createErrorResponse(const QString& id, int code, const QString& message);
+    QJsonObject createErrorResponse(quint64 id, int code, const QString& message);
 
     /**
      * @brief Convert SessionManager::Status to JSON
@@ -67,21 +67,21 @@ private:
     QJsonObject statusToJson(const SessionManager::Status& status);
 
     // RPC method handlers
-    QJsonObject handleStart(const QString& id, const QJsonObject& params);
-    QJsonObject handleStop(const QString& id, const QJsonObject& params);
-    QJsonObject handleGetStatus(const QString& id, const QJsonObject& params);
-    QJsonObject handleInitialize(const QString& id, const QJsonObject& params);
-    QJsonObject handleAuthorize(const QString& id, const QJsonObject& params);
-    QJsonObject handleChangePIN(const QString& id, const QJsonObject& params);
-    QJsonObject handleChangePUK(const QString& id, const QJsonObject& params);
-    QJsonObject handleUnblock(const QString& id, const QJsonObject& params);
-    QJsonObject handleGenerateMnemonic(const QString& id, const QJsonObject& params);
-    QJsonObject handleLoadMnemonic(const QString& id, const QJsonObject& params);
-    QJsonObject handleFactoryReset(const QString& id, const QJsonObject& params);
-    QJsonObject handleGetMetadata(const QString& id, const QJsonObject& params);
-    QJsonObject handleStoreMetadata(const QString& id, const QJsonObject& params);
-    QJsonObject handleExportLoginKeys(const QString& id, const QJsonObject& params);
-    QJsonObject handleExportRecoverKeys(const QString& id, const QJsonObject& params);
+    QJsonObject handleStart(quint64 id, const QJsonObject& params);
+    QJsonObject handleStop(quint64 id, const QJsonObject& params);
+    QJsonObject handleGetStatus(quint64 id, const QJsonObject& params);
+    QJsonObject handleInitialize(quint64 id, const QJsonObject& params);
+    QJsonObject handleAuthorize(quint64 id, const QJsonObject& params);
+    QJsonObject handleChangePIN(quint64 id, const QJsonObject& params);
+    QJsonObject handleChangePUK(quint64 id, const QJsonObject& params);
+    QJsonObject handleUnblock(quint64 id, const QJsonObject& params);
+    QJsonObject handleGenerateMnemonic(quint64 id, const QJsonObject& params);
+    QJsonObject handleLoadMnemonic(quint64 id, const QJsonObject& params);
+    QJsonObject handleFactoryReset(quint64 id, const QJsonObject& params);
+    QJsonObject handleGetMetadata(quint64 id, const QJsonObject& params);
+    QJsonObject handleStoreMetadata(quint64 id, const QJsonObject& params);
+    QJsonObject handleExportLoginKeys(quint64 id, const QJsonObject& params);
+    QJsonObject handleExportRecoverKeys(quint64 id, const QJsonObject& params);
 
     std::unique_ptr<SessionManager> m_sessionManager;
     std::shared_ptr<Keycard::ICommunicationManager> m_commMgr;

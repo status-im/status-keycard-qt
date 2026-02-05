@@ -73,7 +73,7 @@ QString TestRpcService::sendRequest(const QString& method, const QJsonObject& pa
 {
     QJsonObject request;
     request["jsonrpc"] = "2.0";
-    request["id"] = "test-id";
+    request["id"] = 1234567890;
     request["method"] = method;
     
     if (!params.isEmpty()) {
@@ -132,7 +132,7 @@ void TestRpcService::testSuccessResponse()
     QVERIFY(resp.contains("result"));
     QVERIFY(!resp.contains("error") || resp["error"].isNull());
     QCOMPARE(resp["jsonrpc"].toString(), QString("2.0"));
-    QCOMPARE(resp["id"].toString(), QString("test-id"));
+    QCOMPARE(resp["id"].toInt(), 1234567890);
 }
 
 void TestRpcService::testStartMethod()
