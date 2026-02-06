@@ -24,14 +24,17 @@ public:
     void emitError(const QString& error);
     void emitSignal(const QString& jsonSignal);
     void emitChannelStateChanged(const QString& state);
+    void resetLastStates();
 
 private:
     SignalManager();
     ~SignalManager();
     
     void sendSignal(const QString& jsonSignal);
-    
+
     SignalCallback m_callback;
+    QString m_lastStatusState;
+    QString m_lastChannelState;
     static SignalManager* s_instance;
 };
 

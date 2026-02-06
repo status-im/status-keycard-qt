@@ -24,6 +24,8 @@ private slots:
     void testEmitError();
     void testSignalFormat();
     void testMultipleSignals();
+    void testDuplicateStatusSignalsSuppressed();
+    void testDuplicateChannelSignalsSuppressed();
 
 private:
     SignalManager* m_signalManager;
@@ -53,6 +55,7 @@ void TestSignalManager::cleanupTestCase()
 void TestSignalManager::init()
 {
     m_signalManager = SignalManager::instance();
+    m_signalManager->resetLastStates();
     s_receivedSignals.clear();
     m_signalManager->setCallback(signalCallback);
 }
@@ -236,6 +239,46 @@ void TestSignalManager::testMultipleSignals()
         QVERIFY(signal.contains("type"));
         QVERIFY(signal.contains("event"));
     }
+}
+
+void TestSignalManager::testDuplicateStatusSignalsSuppressed()
+{
+    SessionManager::Status status;
+    status.state = "ready";
+
+    // Emit same state multiple times
+    m_signalManager->emitStatusChanged(status);
+    m_signalManager->emitStatusChanged(status);
+    m_signalManager->emitStatusChanged(status);
+
+    // Only the first should get through
+    QCOMPARE(s_receivedSignals.size(), 1);
+
+    // A different state should get through
+    SessionManager::Status status2;
+    status2.state = "waiting-for-card";
+    m_signalManager->emitStatusChanged(status2);
+    QCOMPARE(s_receivedSignals.size(), 2);
+
+    // And the original state again should also get through (it changed back)
+    m_signalManager->emitStatusChanged(status);
+    QCOMPARE(s_receivedSignals.size(), 3);
+}
+
+void TestSignalManager::testDuplicateChannelSignalsSuppressed()
+{
+    // Emit same channel state multiple times
+    m_signalManager->emitChannelStateChanged("reading");
+    m_signalManager->emitChannelStateChanged("reading");
+    m_signalManager->emitChannelStateChanged("reading");
+    m_signalManager->emitChannelStateChanged("reading");
+
+    // Only the first should get through
+    QCOMPARE(s_receivedSignals.size(), 1);
+
+    // A different state should get through
+    m_signalManager->emitChannelStateChanged("idle");
+    QCOMPARE(s_receivedSignals.size(), 2);
 }
 
 QTEST_MAIN(TestSignalManager)
