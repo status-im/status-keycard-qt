@@ -34,7 +34,7 @@ QJsonObject FlowSignals::buildSignal(const QString& type, const QJsonObject& eve
 void FlowSignals::emitSignal(const QJsonObject& signal)
 {
     QString json = QJsonDocument(signal).toJson(QJsonDocument::Compact);
-    qDebug() << "FlowSignals: Emitting signal:" << json;
+    qDebug() << "StatusKeycardQt::FlowSignals: Emitting signal:" << json;
     SignalManager::instance()->emitSignal(json);
 }
 

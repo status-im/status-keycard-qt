@@ -18,8 +18,8 @@ GetMetadataFlow::GetMetadataFlow(FlowManager* mgr, const QJsonObject& params, QO
 QJsonObject GetMetadataFlow::execute()
 {
     // Get metadata from card (matching status-keycard-go)
-    qDebug() << "GetMetadataFlow: Getting metadata from card";
-    
+    qDebug() << "StatusKeycardQt::GetMetadataFlow: Getting metadata from card";
+
     // Phase 6: CommunicationManager is always available
     auto commMgr = communicationManager();
     if (!commMgr) {
@@ -28,10 +28,10 @@ QJsonObject GetMetadataFlow::execute()
         error[FlowParams::ERROR_KEY] = "get-metadata-failed";
         return error;
     }
-    
+
     auto cmd = std::make_unique<Keycard::GetMetadataCommand>();
     Keycard::CommandResult cmdResult = commMgr->executeCommandSync(std::move(cmd), 30000);
-    
+
     QByteArray metadataData;
     if (!cmdResult.success) {
         qWarning() << "GetMetadataFlow: Failed to get metadata:" << cmdResult.error;
@@ -40,62 +40,62 @@ QJsonObject GetMetadataFlow::execute()
         QVariantMap data = cmdResult.data.toMap();
         metadataData = data["tlvData"].toByteArray();
     }
-    
+
     // Check if data looks like a status word (error response)
     // Status words are 2 bytes: SW1 SW2 (e.g. 0x6a86 = no data available)
     if (metadataData.size() == 2) {
         uint16_t sw = (static_cast<uint8_t>(metadataData[0]) << 8) | static_cast<uint8_t>(metadataData[1]);
         if (sw != 0x9000) {  // Not success
-            qDebug() << "GetMetadataFlow: Card returned status word:" << QString("0x%1").arg(sw, 4, 16, QChar('0'));
-            qDebug() << "GetMetadataFlow: No metadata on card (error or empty)";
+            qDebug() << "StatusKeycardQt::GetMetadataFlow: Card returned status word:" << QString("0x%1").arg(sw, 4, 16, QChar('0'));
+            qDebug() << "StatusKeycardQt::GetMetadataFlow: No metadata on card (error or empty)";
             QJsonObject metadata;
             metadata["name"] = "";
             metadata["wallets"] = QJsonArray();
-            
+
             QJsonObject result = buildCardInfoJson();
             result[FlowParams::CARD_META] = metadata;
             return result;
         }
     }
-    
+
     // If no metadata on card, return error "no-data" (matching Go behavior)
     if (metadataData.isEmpty()) {
-        qDebug() << "GetMetadataFlow: No metadata on card";
+        qDebug() << "StatusKeycardQt::GetMetadataFlow: No metadata on card";
         QJsonObject result = buildCardInfoJson();
         result[FlowParams::ERROR_KEY] = "no-data";
         return result;
     }
-    
+
     // Parse metadata using Go's custom binary format (matching types/metadata.go ParseMetadata())
     // Format: [version+namelen][name][start/count pairs in LEB128]
     //   Byte 0: version (3 bits) + name length (5 bits)
     //   Bytes 1..namelen: card name
     //   Remaining: series of start/count LEB128 pairs for wallet paths
-    
+
     QJsonObject metadata;
     metadata["name"] = "";
     metadata["wallets"] = QJsonArray();
-    
+
     int offset = 0;
     if (offset >= metadataData.size()) {
-        qDebug() << "GetMetadataFlow: Metadata too short";
+        qDebug() << "StatusKeycardQt::GetMetadataFlow: Metadata too short";
         QJsonObject result = buildCardInfoJson();
         result[FlowParams::CARD_META] = metadata;
         return result;
     }
-    
+
     // Parse header byte
     uint8_t header = static_cast<uint8_t>(metadataData[offset++]);
     uint8_t version = header >> 5;
     uint8_t namelen = header & 0x1F;
-    
+
     if (version != 1) {
         qWarning() << "GetMetadataFlow: Invalid metadata version:" << version;
         QJsonObject result = buildCardInfoJson();
         result[FlowParams::CARD_META] = metadata;
         return result;
     }
-    
+
     // Parse card name
     if (namelen > 0) {
         if (offset + namelen > metadataData.size()) {
@@ -107,9 +107,9 @@ QJsonObject GetMetadataFlow::execute()
         QByteArray nameData = metadataData.mid(offset, namelen);
         metadata["name"] = QString::fromUtf8(nameData);
         offset += namelen;
-        qDebug() << "GetMetadataFlow: Card name:" << metadata["name"].toString();
+        qDebug() << "StatusKeycardQt::GetMetadataFlow: Card name:" << metadata["name"].toString();
     }
-    
+
     // Parse wallet paths (LEB128 encoded start/count pairs)
     QJsonArray wallets;
     while (offset < metadataData.size()) {
@@ -122,9 +122,9 @@ QJsonObject GetMetadataFlow::execute()
             if ((byte & 0x80) == 0) break;
             shift += 7;
         }
-        
+
         if (offset >= metadataData.size()) break;
-        
+
         // Parse count (LEB128)
         uint32_t count = 0;
         shift = 0;
@@ -134,7 +134,7 @@ QJsonObject GetMetadataFlow::execute()
             if ((byte & 0x80) == 0) break;
             shift += 7;
         }
-        
+
         // Add all paths in range [start, start+count]
         for (uint32_t i = start; i <= start + count; ++i) {
             QString walletPath = QString("m/44'/60'/0'/0/%1").arg(i);
@@ -143,10 +143,10 @@ QJsonObject GetMetadataFlow::execute()
             wallets.append(wallet);
         }
     }
-    
+
     metadata["wallets"] = wallets;
-    qDebug() << "GetMetadataFlow: Found" << wallets.size() << "wallets";
-    
+    qDebug() << "StatusKeycardQt::GetMetadataFlow: Found" << wallets.size() << "wallets";
+
     // If resolve-addresses requested, authenticate and export keys
     // (matching Go: authenticate ONCE before wallet loop, even if no wallets)
     bool resolveAddr = params().value(FlowParams::RESOLVE_ADDR).toBool();
@@ -161,25 +161,25 @@ QJsonObject GetMetadataFlow::execute()
             error[FlowParams::CARD_META] = metadata;
             return error;
         }
-        
+
         // Authenticate ONCE (will pause for PIN if needed - matching Go behavior)
-        qDebug() << "GetMetadataFlow: Authenticating for address resolution";
+        qDebug() << "StatusKeycardQt::GetMetadataFlow: Authenticating for address resolution";
         if (!verifyPIN()) {
             QJsonObject error;
             error[FlowParams::ERROR_KEY] = "auth-failed";
             return error;
         }
-        
+
         // Export master address if requested
         bool exportMaster = params().value(FlowParams::EXPORT_MASTER).toBool();
         if (exportMaster) {
-            qDebug() << "GetMetadataFlow: Exporting master address";
-            
+            qDebug() << "StatusKeycardQt::GetMetadataFlow: Exporting master address";
+
             // Phase 6: CommunicationManager is always available (already checked at start)
-            auto cmd = std::make_unique<Keycard::ExportKeyCommand>(true, false, "m", 
+            auto cmd = std::make_unique<Keycard::ExportKeyCommand>(true, false, "m",
                 Keycard::APDU::P2ExportKeyPublicOnly);
             Keycard::CommandResult result = commMgr->executeCommandSync(std::move(cmd), 30000);
-            
+
             QByteArray masterKeyData;
             if (result.success) {
                 masterKeyData = result.data.toMap()["keyData"].toByteArray();
@@ -189,22 +189,22 @@ QJsonObject GetMetadataFlow::execute()
                 QByteArray publicKey;
                 QByteArray privateKey;
                 QByteArray chainCode;
-                
+
                 // Find tag 0xA1 (ExportKeyTemplate)
                 int offset = 0;
                 if (offset < masterKeyData.size() && static_cast<uint8_t>(masterKeyData[offset]) == 0xA1) {
                     offset++; // Skip tag
                     if (offset < masterKeyData.size()) {
                         int templateLen = static_cast<uint8_t>(masterKeyData[offset++]);
-                        
+
                         // Search for tags 0x80 (public key), 0x81 (private key), and 0x82 (chain code)
                         while (offset < masterKeyData.size() && offset < templateLen + 2) {
                             uint8_t tag = static_cast<uint8_t>(masterKeyData[offset++]);
                             if (offset >= masterKeyData.size()) break;
-                            
+
                             uint8_t len = static_cast<uint8_t>(masterKeyData[offset++]);
                             if (offset + len > masterKeyData.size()) break;
-                            
+
                             if (tag == 0x80) {  // Public key tag
                                 publicKey = masterKeyData.mid(offset, len);
                             } else if (tag == 0x81) {  // Private key tag
@@ -216,14 +216,14 @@ QJsonObject GetMetadataFlow::execute()
                         }
                     }
                 }
-                
+
                 if (publicKey.size() == 65 && static_cast<uint8_t>(publicKey[0]) == 0x04) {
                     // Derive Ethereum address from master public key
                     QByteArray pubKeyData = publicKey.mid(1);  // Remove 0x04 prefix
                     QByteArray hash = QCryptographicHash::hash(pubKeyData, QCryptographicHash::Keccak_256);
                     QByteArray addressBytes = hash.right(20);  // Last 20 bytes
                     QString masterAddress = QString("0x") + addressBytes.toHex();
-                    
+
                     // Store master key data in metadata
                     metadata["masterAddress"] = masterAddress;
                     metadata["masterPublicKey"] = QString::fromLatin1(publicKey.toHex());
@@ -238,18 +238,18 @@ QJsonObject GetMetadataFlow::execute()
                 }
             }
         }
-        
+
         // Now export keys for each wallet
         QJsonArray wallets = metadata["wallets"].toArray();
         for (int i = 0; i < wallets.size(); ++i) {
             QJsonObject wallet = wallets[i].toObject();
             QString walletPath = wallet["path"].toString();
-            
+
             // Phase 6: CommunicationManager is always available (already checked at start)
             auto cmd = std::make_unique<Keycard::ExportKeyCommand>(true, false, walletPath,
                 Keycard::APDU::P2ExportKeyPublicOnly);
             Keycard::CommandResult result = commMgr->executeCommandSync(std::move(cmd), 30000);
-            
+
             QByteArray keyData;
             if (result.success) {
                 keyData = result.data.toMap()["keyData"].toByteArray();
@@ -260,22 +260,22 @@ QJsonObject GetMetadataFlow::execute()
                 QByteArray publicKey;
                 QByteArray privateKey;
                 QByteArray chainCode;
-                
+
                 // Find tag 0xA1 (ExportKeyTemplate)
                 int offset = 0;
                 if (offset < keyData.size() && static_cast<uint8_t>(keyData[offset]) == 0xA1) {
                     offset++; // Skip tag
                     if (offset < keyData.size()) {
                         int templateLen = static_cast<uint8_t>(keyData[offset++]);
-                        
+
                         // Search for tags 0x80 (public key), 0x81 (private key), and 0x82 (chain code)
                         while (offset < keyData.size() && offset < templateLen + 2) {
                             uint8_t tag = static_cast<uint8_t>(keyData[offset++]);
                             if (offset >= keyData.size()) break;
-                            
+
                             uint8_t len = static_cast<uint8_t>(keyData[offset++]);
                             if (offset + len > keyData.size()) break;
-                            
+
                             if (tag == 0x80) {  // Public key tag
                                 publicKey = keyData.mid(offset, len);
                             } else if (tag == 0x81) {  // Private key tag
@@ -287,35 +287,35 @@ QJsonObject GetMetadataFlow::execute()
                         }
                     }
                 }
-                
+
                 if (publicKey.size() == 65 && static_cast<uint8_t>(publicKey[0]) == 0x04) {
                     // Store hex-encoded public key
                     wallet["publicKey"] = QString::fromLatin1(publicKey.toHex());
                     wallet["address"] = FlowBase::publicKeyToAddress(publicKey);
-                    
+
                     // Store hex-encoded private key (if present) - marked as omitempty in Go
                     if (!privateKey.isEmpty()) {
                         wallet["privateKey"] = QString::fromLatin1(privateKey.toHex());
                     }
-                    
+
                     // Store hex-encoded chain code (if present)
                     if (!chainCode.isEmpty()) {
                         wallet["chainCode"] = QString::fromLatin1(chainCode.toHex());
                     }
-                    
+
                 } else {
                     qWarning() << "GetMetadataFlow: Invalid public key format, size=" << publicKey.size();
                 }
             }
-            
+
             wallets[i] = wallet;
         }
         metadata["wallets"] = wallets;
     }
-    
+
     QJsonObject result = buildCardInfoJson();
     result[FlowParams::CARD_META] = metadata;
-    
+
     return result;
 }
 

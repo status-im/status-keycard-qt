@@ -29,7 +29,7 @@ SignalManager* SignalManager::instance()
 void SignalManager::setCallback(SignalCallback callback)
 {
     m_callback = callback;
-    qDebug() << "SignalManager: Callback" << (callback ? "set" : "cleared");
+    qDebug() << "StatusKeycardQt::SignalManager: Callback" << (callback ? "set" : "cleared");
 }
 
 void SignalManager::emitStatusChanged(const SessionManager::Status& status)
@@ -42,7 +42,7 @@ void SignalManager::emitStatusChanged(const SessionManager::Status& status)
     // Build the event object with the exact structure from status-keycard-go
     QJsonObject event;
     event["state"] = status.state;
-    
+
     // keycardInfo (nullable)
     if (status.keycardInfo) {
         QJsonObject info;
@@ -56,7 +56,7 @@ void SignalManager::emitStatusChanged(const SessionManager::Status& status)
     } else {
         event["keycardInfo"] = QJsonValue::Null;
     }
-    
+
     // keycardStatus (nullable)
     if (status.keycardStatus) {
         QJsonObject cardStatus;
@@ -68,12 +68,12 @@ void SignalManager::emitStatusChanged(const SessionManager::Status& status)
     } else {
         event["keycardStatus"] = QJsonValue::Null;
     }
-    
+
     // metadata (nullable)
     if (status.metadata) {
         QJsonObject meta;
         meta["name"] = status.metadata->name;
-        
+
         QJsonArray walletsArray;
         for (const auto& wallet : status.metadata->wallets) {
             QJsonObject w;
@@ -87,15 +87,15 @@ void SignalManager::emitStatusChanged(const SessionManager::Status& status)
     } else {
         event["metadata"] = QJsonValue::Null;
     }
-    
+
     // Wrap in signal envelope
     QJsonObject signal;
     signal["type"] = "status-changed";
     signal["event"] = event;
-    
+
     QJsonDocument doc(signal);
     QString jsonString = QString::fromUtf8(doc.toJson(QJsonDocument::Compact));
-    
+
     sendSignal(jsonString);
 }
 
@@ -103,14 +103,14 @@ void SignalManager::emitError(const QString& error)
 {
     QJsonObject event;
     event["error"] = error;
-    
+
     QJsonObject signal;
     signal["type"] = "error";
     signal["event"] = event;
-    
+
     QJsonDocument doc(signal);
     QString jsonString = QString::fromUtf8(doc.toJson(QJsonDocument::Compact));
-    
+
     sendSignal(jsonString);
 }
 
@@ -128,14 +128,14 @@ void SignalManager::emitChannelStateChanged(const QString& state)
 
     QJsonObject event;
     event["state"] = state;
-    
+
     QJsonObject signal;
     signal["type"] = "channel-state-changed";
     signal["event"] = event;
-    
+
     QJsonDocument doc(signal);
     QString jsonString = QString::fromUtf8(doc.toJson(QJsonDocument::Compact));
-    
+
     sendSignal(jsonString);
 }
 
@@ -148,10 +148,10 @@ void SignalManager::resetLastStates()
 void SignalManager::sendSignal(const QString& jsonSignal)
 {
     if (!m_callback) {
-        qDebug() << "SignalManager: No callback set, signal dropped:" << jsonSignal;
+        qDebug() << "StatusKeycardQt::SignalManager: No callback set, signal dropped:" << jsonSignal;
         return;
     }
-    
+
     // Convert QString to char* for C callback
     QByteArray signalBytes = jsonSignal.toUtf8();
     m_callback(signalBytes.constData());

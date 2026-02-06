@@ -18,7 +18,7 @@ QJsonObject ChangePINFlow::execute()
         error[FlowParams::ERROR_KEY] = "auth-failed";
         return error;
     }
-    
+
     QString newPIN = params()[FlowParams::NEW_PIN].toString();
     if (newPIN.isEmpty()) {
         // Request new PIN (empty error means normal request, not an error condition)
@@ -30,7 +30,7 @@ QJsonObject ChangePINFlow::execute()
         }
         newPIN = params()[FlowParams::NEW_PIN].toString();
     }
-    
+
     // Phase 6: CommunicationManager is always available
     auto commMgr = communicationManager();
     if (!commMgr) {
@@ -39,17 +39,17 @@ QJsonObject ChangePINFlow::execute()
         error[FlowParams::ERROR_KEY] = "change-failed";
         return error;
     }
-    
+
     auto cmd = std::make_unique<Keycard::ChangePINCommand>(newPIN);
     Keycard::CommandResult result = commMgr->executeCommandSync(std::move(cmd), 30000);
-    
+
     if (!result.success) {
         QJsonObject error;
         error[FlowParams::ERROR_KEY] = "change-failed";
         return error;
     }
-    
-    qDebug() << "ChangePINFlow: PIN changed successfully";
+
+    qDebug() << "StatusKeycardQt::ChangePINFlow: PIN changed successfully";
     return buildCardInfoJson();
 }
 

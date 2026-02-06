@@ -25,8 +25,8 @@ LoginFlow::~LoginFlow()
 
 QJsonObject LoginFlow::execute()
 {
-    qDebug() << "LoginFlow: Starting execution";
-    
+    qDebug() << "StatusKeycardQt::LoginFlow: Starting execution";
+
     // 1. Select keycard applet
     if (!selectKeycard()) {
         qCritical() << "LoginFlow: Failed to select keycard";
@@ -34,7 +34,7 @@ QJsonObject LoginFlow::execute()
         error[FlowParams::ERROR_KEY] = "select-failed";
         return error;
     }
-    
+
     // 2. Check card has keys
     if (!requireKeys()) {
         qWarning() << "LoginFlow: Card has no keys";
@@ -42,20 +42,20 @@ QJsonObject LoginFlow::execute()
         error[FlowParams::ERROR_KEY] = "no-keys";
         return error;
     }
-    
+
     // 3. Open secure channel and authenticate (verify PIN)
     if (!verifyPIN()) {
         QJsonObject error;
         error[FlowParams::ERROR_KEY] = "auth-failed";
         return error;
     }
-    
+
     // Start batch operations to keep channel open during 2 exports
     auto commMgr = communicationManager();
     if (commMgr) {
         commMgr->startBatchOperations();
     }
-    
+
     // RAII guard ensures batch operations are ended on all exit paths
     auto batchGuard = [commMgr](void*) {
         if (commMgr) {
@@ -63,9 +63,9 @@ QJsonObject LoginFlow::execute()
         }
     };
     std::unique_ptr<void, decltype(batchGuard)> guard(reinterpret_cast<void*>(1), batchGuard);
-    
+
     // 4. Export encryption key (with private key) - FIRST to match status-keycard-go order
-    qDebug() << "LoginFlow: Exporting encryption key...";
+    qDebug() << "StatusKeycardQt::LoginFlow: Exporting encryption key...";
     QJsonObject encKey = exportKey(ENCRYPTION_PATH, true);
     if (encKey.isEmpty()) {
         qCritical() << "LoginFlow: Failed to export encryption key";
@@ -73,9 +73,9 @@ QJsonObject LoginFlow::execute()
         error[FlowParams::ERROR_KEY] = "export-encryption-failed";
         return error;
     }
-    
+
     // 5. Export whisper key (with private key) - SECOND to match status-keycard-go order
-    qDebug() << "LoginFlow: Exporting whisper key...";
+    qDebug() << "StatusKeycardQt::LoginFlow: Exporting whisper key...";
     QJsonObject whisperKey = exportKey(WHISPER_PATH, true);
     if (whisperKey.isEmpty()) {
         qCritical() << "LoginFlow: Failed to export whisper key";
@@ -83,13 +83,13 @@ QJsonObject LoginFlow::execute()
         error[FlowParams::ERROR_KEY] = "export-whisper-failed";
         return error;
     }
-    
+
     // 6. Build result
     QJsonObject result = buildCardInfoJson();
     result[FlowParams::ENC_KEY] = encKey;
     result[FlowParams::WHISPER_KEY] = whisperKey;
-    
-    qDebug() << "LoginFlow: Execution completed successfully";
+
+    qDebug() << "StatusKeycardQt::LoginFlow: Execution completed successfully";
     return result;
 }
 
@@ -100,60 +100,60 @@ QJsonObject LoginFlow::exportKey(const QString& path, bool includePrivate)
         qWarning() << "LoginFlow: Export cancelled";
         return QJsonObject();
     }
-    
+
     // derive=true, makeCurrent=(path=="m"), exportType=private or public
     bool makeCurrent = (path == "m"); // Only for master path
-    uint8_t exportType = includePrivate ? 
+    uint8_t exportType = includePrivate ?
         Keycard::APDU::P2ExportKeyPrivateAndPublic :
         Keycard::APDU::P2ExportKeyPublicOnly;
-    
+
     // Phase 6: CommunicationManager is always available
     auto commMgr = communicationManager();
     if (!commMgr) {
         qCritical() << "LoginFlow: CommunicationManager not available";
         return QJsonObject();
     }
-    
+
     auto cmd = std::make_unique<Keycard::ExportKeyCommand>(true, makeCurrent, path, exportType);
     Keycard::CommandResult result = commMgr->executeCommandSync(std::move(cmd), 30000);
-    
+
     if (!result.success) {
         qCritical() << "LoginFlow: Export key failed:" << result.error;
         return QJsonObject();
     }
-    
+
     // Extract key data from result
     QVariantMap data = result.data.toMap();
     QByteArray keyData = data["keyData"].toByteArray();
-    
-    qDebug() << "LoginFlow::exportKey() - Export SUCCESS for path:" << path;
-    
+
+    qDebug() << "StatusKeycardQt::LoginFlow::exportKey() - Export SUCCESS for path:" << path;
+
     // Parse and validate key data
     if (keyData.isEmpty()) {
         qCritical() << "LoginFlow: Export key returned empty data!";
         return QJsonObject();
     }
-    
+
     // Parse TLV-encoded key data
     QByteArray publicKey, privateKey;
     if (!parseExportedKey(keyData, publicKey, privateKey)) {
         qCritical() << "LoginFlow: Failed to parse exported key data";
         return QJsonObject();
     }
-    
+
     // Build result JSON
     QJsonObject keyPair;
     keyPair["publicKey"] = QString("0x") + publicKey.toHex();
     keyPair["address"] = FlowBase::publicKeyToAddress(publicKey);
-    
+
     if (includePrivate && !privateKey.isEmpty()) {
         keyPair["privateKey"] = QString("0x") + privateKey.toHex();
     } else if (includePrivate) {
         qCritical() << "LoginFlow: Private key requested but not found in exported data";
         return QJsonObject();
     }
-    
-    qDebug() << "LoginFlow::exportKey() - Successfully exported key at path:" << path;
+
+    qDebug() << "StatusKeycardQt::LoginFlow::exportKey() - Successfully exported key at path:" << path;
     return keyPair;
 }
 

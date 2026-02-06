@@ -18,7 +18,7 @@ RpcService::RpcService(QObject* parent)
 RpcService::~RpcService() = default;
 
 void RpcService::setCommunicationManager(std::shared_ptr<Keycard::ICommunicationManager> commMgr) {
-    qDebug() << "RpcService: Setting CommunicationManager for SessionManager";
+    qDebug() << "StatusKeycardQt::RpcService: Setting CommunicationManager for SessionManager";
     m_commMgr = commMgr;
     if (m_sessionManager) {
         m_sessionManager->setCommunicationManager(commMgr);
@@ -55,9 +55,9 @@ QString RpcService::processRequest(const QString& requestJson) {
         params = paramsValue.toObject();
     }
 
-    qDebug() << "RpcService::processRequest() id:" << id;
-    qDebug() << "RpcService::processRequest() method:" << method;
-    qDebug() << "RpcService::processRequest() params:" << QJsonDocument(params).toJson(QJsonDocument::Compact);;
+    qDebug() << "StatusKeycardQt::RpcService::processRequest() id:" << id;
+    qDebug() << "StatusKeycardQt::RpcService::processRequest() method:" << method;
+    qDebug() << "StatusKeycardQt::RpcService::processRequest() params:" << QJsonDocument(params).toJson(QJsonDocument::Compact);;
 
     // Route to handler
     QJsonObject response;
@@ -180,8 +180,8 @@ QJsonObject RpcService::statusToJson(const SessionManager::Status& status) {
 // ============================================================================
 
 QJsonObject RpcService::handleStart(quint64 id, const QJsonObject& params) {
-    qDebug() << "RpcService::handleStart() called on RpcService at:" << (void*)this;
-    qDebug() << "SessionManager at:" << (void*)m_sessionManager.get();
+    qDebug() << "StatusKeycardQt::RpcService::handleStart() called on RpcService at:" << (void*)this;
+    qDebug() << "StatusKeycardQt::SessionManager at:" << (void*)m_sessionManager.get();
 
     QString storagePath = params["storageFilePath"].toString();
     bool logEnabled = params["logEnabled"].toBool(false);
@@ -214,8 +214,8 @@ QJsonObject RpcService::handleStart(quint64 id, const QJsonObject& params) {
         return createErrorResponse(id, -32000, m_sessionManager->lastError());
     }
 
-    qDebug() << "RpcService::handleStart() completed. SessionManager started successfully.";
-    qDebug() << "CommunicationManager at:" << (void*)m_commMgr.get();
+    qDebug() << "StatusKeycardQt::RpcService::handleStart() completed. SessionManager started successfully.";
+    qDebug() << "StatusKeycardQt::CommunicationManager at:" << (void*)m_commMgr.get();
 
     return createSuccessResponse(id, QJsonObject());
 }

@@ -14,10 +14,10 @@ static QByteArray derivePairingToken(const QString& password)
     QByteArray passwordBytes = password.toUtf8();
     int iterations = 50000;
     int keyLength = 32;
-    
+
     QByteArray result(keyLength, 0);
     QByteArray U, T;
-    
+
     // PBKDF2: derived_key = PBKDF2(password, salt, iterations, keyLength)
     // Using HMAC-SHA256
     for (int block = 1; block <= (keyLength + 31) / 32; ++block) {
@@ -27,10 +27,10 @@ static QByteArray derivePairingToken(const QString& password)
         blockData.append((char)((block >> 16) & 0xFF));
         blockData.append((char)((block >> 8) & 0xFF));
         blockData.append((char)(block & 0xFF));
-        
+
         U = QMessageAuthenticationCode::hash(blockData, passwordBytes, QCryptographicHash::Sha256);
         T = U;
-        
+
         // U_2 through U_iterations
         for (int i = 1; i < iterations; ++i) {
             U = QMessageAuthenticationCode::hash(U, passwordBytes, QCryptographicHash::Sha256);
@@ -39,14 +39,14 @@ static QByteArray derivePairingToken(const QString& password)
                 T[j] = T[j] ^ U[j];
             }
         }
-        
+
         // Copy to result
         int bytesToCopy = qMin(32, keyLength - (block - 1) * 32);
         for (int i = 0; i < bytesToCopy; ++i) {
             result[(block - 1) * 32 + i] = T[i];
         }
     }
-    
+
     return result;
 }
 
@@ -119,11 +119,11 @@ void MockKeycardBackend::simulateCardInserted()
     if (m_connected) {
         return;
     }
-    
+
     m_connected = true;
     m_pinRetries = 3;
     m_pukRetries = 5;
-    qDebug() << "[MockBackend] Card inserted";
+    qDebug() << "StatusKeycardQt::[MockBackend] Card inserted";
     emit targetDetected(m_instanceUID.toHex());
 }
 
@@ -132,10 +132,10 @@ void MockKeycardBackend::simulateCardRemoved()
     if (!m_connected) {
         return;
     }
-    
+
     m_connected = false;
     m_paired = false;
-    qDebug() << "[MockBackend] Card removed";
+    qDebug() << "StatusKeycardQt::[MockBackend] Card removed";
     emit cardRemoved();  // KeycardChannelBackend signal
 }
 
@@ -147,8 +147,8 @@ bool MockKeycardBackend::isConnected() const
 void MockKeycardBackend::startDetection()
 {
     m_detecting = true;
-    qDebug() << "[MockBackend] Detection started";
-    
+    qDebug() << "StatusKeycardQt::[MockBackend] Detection started";
+
     if (m_autoConnect) {
         m_autoConnectTimer->start(50); // Auto-connect after 50ms
     }
@@ -158,7 +158,7 @@ void MockKeycardBackend::stopDetection()
 {
     m_detecting = false;
     m_autoConnectTimer->stop();
-    qDebug() << "[MockBackend] Detection stopped";
+    qDebug() << "StatusKeycardQt::[MockBackend] Detection stopped";
 }
 
 void MockKeycardBackend::disconnect()
@@ -175,7 +175,7 @@ void MockKeycardBackend::setState(Keycard::ChannelState state)
 
 void MockKeycardBackend::forceScan()
 {
-    qDebug() << "[MockBackend] Force scan requested";
+    qDebug() << "StatusKeycardQt::[MockBackend] Force scan requested";
     // For mock, we can trigger a scan if detection is active
     if (m_detecting && !m_connected && m_autoConnect) {
         m_autoConnectTimer->start(10); // Trigger faster auto-connect
@@ -188,29 +188,29 @@ QByteArray MockKeycardBackend::transmit(const QByteArray& apdu)
         qWarning() << "[MockBackend] APDU sent without connection";
         return errorResponse(0x6F, 0x00); // Unknown error
     }
-    
+
     if (apdu.isEmpty()) {
         return errorResponse(0x6F, 0x00);
     }
-    
+
     quint8 cla = static_cast<quint8>(apdu[0]);
     quint8 ins = static_cast<quint8>(apdu[1]);
-    
-    qDebug() << "[MockBackend] APDU: CLA=" << Qt::hex << cla << "INS=" << ins;
-    
+
+    qDebug() << "StatusKeycardQt::[MockBackend] APDU: CLA=" << Qt::hex << cla << "INS=" << ins;
+
     // Check if this is an encrypted command (CLA=0x80 and data includes IV+encrypted)
     // Encrypted APDUs have: CLA=0x80, and data=[IV(16)][encrypted_data]
     if (cla == 0x80 && apdu.size() > 21) {
         // This is an encrypted command - we can't decrypt it properly in the mock,
         // but we can return mock encrypted responses
-        qDebug() << "[MockBackend] Encrypted APDU detected, returning mock encrypted response";
-        
+        qDebug() << "StatusKeycardQt::[MockBackend] Encrypted APDU detected, returning mock encrypted response";
+
         // Encrypted response format: [MAC(16)][encrypted_data]
         // For simplicity, return success with just MAC (no data)
         QByteArray mockMAC = QByteArray(16, 0xAA); // Mock MAC
         return successResponse(mockMAC);
     }
-    
+
     // Parse APDU command
     if (ins == 0xA4) {
         // SELECT command
@@ -223,7 +223,7 @@ QByteArray MockKeycardBackend::transmit(const QByteArray& apdu)
         return generateOpenSecureChannelResponse();
     } else if (ins == 0x11) {
         // MUTUALLY_AUTHENTICATE (sent via secure channel)
-        qDebug() << "[MockBackend] MUTUALLY_AUTHENTICATE: returning success";
+        qDebug() << "StatusKeycardQt::[MockBackend] MUTUALLY_AUTHENTICATE: returning success";
         return successResponse(QByteArray()); // Just return success
     } else if (ins == 0x12) {
         // PAIR command (INS_PAIR = 0x12)
@@ -255,7 +255,7 @@ QByteArray MockKeycardBackend::transmit(const QByteArray& apdu)
         // STORE METADATA
         return generateStoreMetadataResponse();
     }
-    
+
     // Unknown command
     qWarning() << "[MockBackend] Unknown APDU command:" << Qt::hex << ins;
     return successResponse(); // Just return success for now
@@ -271,15 +271,15 @@ QByteArray MockKeycardBackend::generateSelectResponse()
         tlv.append(value);
         return tlv;
     };
-    
+
     // SELECT response uses TLV format:
     // 0xA4 [length] { 0x8F [instanceUID], 0x80 [pubkey], 0x02 [version], 0x02 [slots], 0x8E [keyUID] }
-    
+
     QByteArray innerData;
-    
+
     // Instance UID (tag 0x8F)
     innerData.append(buildTLV(0x8F, m_instanceUID));
-    
+
     // Secure channel public key (tag 0x80) - 65 bytes uncompressed secp256k1 key
     // Format: 0x04 + X (32 bytes) + Y (32 bytes)
     QByteArray mockPublicKey = QByteArray(65, 0);
@@ -288,27 +288,27 @@ QByteArray MockKeycardBackend::generateSelectResponse()
         mockPublicKey[i] = QRandomGenerator::global()->bounded(256);
     }
     innerData.append(buildTLV(0x80, mockPublicKey));
-    
+
     // Version (tag 0x02) - major, minor
     QByteArray version;
     version.append(static_cast<char>(3)); // Major version
     version.append(static_cast<char>(0)); // Minor version
     innerData.append(buildTLV(0x02, version));
-    
+
     // Available slots (tag 0x02)
     QByteArray availableSlots;
     availableSlots.append(static_cast<char>(3)); // 3 free pairing slots
     innerData.append(buildTLV(0x02, availableSlots));
-    
+
     // Key UID (tag 0x8E)
     if (m_initialized && !m_keyUID.isEmpty()) {
         innerData.append(buildTLV(0x8E, m_keyUID));
     }
-    
+
     // Wrap in application info template (tag 0xA4)
     QByteArray response = buildTLV(0xA4, innerData);
-    
-    qDebug() << "[MockBackend] SELECT response size:" << response.size() << "bytes";
+
+    qDebug() << "StatusKeycardQt::[MockBackend] SELECT response size:" << response.size() << "bytes";
     return successResponse(response);
 }
 
@@ -324,13 +324,13 @@ QByteArray MockKeycardBackend::generateOpenSecureChannelResponse()
     for (int i = 0; i < 32; ++i) {
         salt[i] = QRandomGenerator::global()->bounded(256);
     }
-    
+
     QByteArray iv = QByteArray(16, 0);
     for (int i = 0; i < 16; ++i) {
         iv[i] = QRandomGenerator::global()->bounded(256);
     }
-    
-    qDebug() << "[MockBackend] OPEN_SECURE_CHANNEL: returning salt + iv (48 bytes)";
+
+    qDebug() << "StatusKeycardQt::[MockBackend] OPEN_SECURE_CHANNEL: returning salt + iv (48 bytes)";
     return successResponse(salt + iv);
 }
 
@@ -341,67 +341,67 @@ QByteArray MockKeycardBackend::generatePairResponse(const QByteArray& apdu)
     //   Response: card_cryptogram (32 bytes) + card_challenge (32 bytes) + salt (32 bytes)
     // Step 2 (P1=1): Client sends cryptogram (32 bytes)
     //   Response: pairing_index (1 byte) + pairing_key (32 bytes) + pairing_iv (16 bytes)
-    
+
     if (apdu.size() < 5) {
         return errorResponse(0x6A, 0x80); // Wrong data
     }
-    
+
     quint8 p1 = static_cast<quint8>(apdu[2]); // P1 byte indicates step
-    
+
     if (p1 == 0x00) {
         // Step 1: Compute proper cryptogram using client's challenge
-        
+
         // Extract client challenge from APDU data (after CLA, INS, P1, P2, Lc)
         if (apdu.size() < 5 + 32) {
             qWarning() << "[MockBackend] PAIR step 1: insufficient data";
             return errorResponse(0x6A, 0x80);
         }
-        
+
         QByteArray clientChallenge = apdu.mid(5, 32);
-        qDebug() << "[MockBackend] PAIR step 1: client challenge:" << clientChallenge.toHex();
-        
+        qDebug() << "StatusKeycardQt::[MockBackend] PAIR step 1: client challenge:" << clientChallenge.toHex();
+
         // Derive secret using PBKDF2 with pairing password
         QByteArray secret = derivePairingToken(m_pairingPassword);
-        qDebug() << "[MockBackend] PAIR: derived secret using password:" << m_pairingPassword;
-        
+        qDebug() << "StatusKeycardQt::[MockBackend] PAIR: derived secret using password:" << m_pairingPassword;
+
         // Compute card cryptogram: SHA256(secret + clientChallenge)
         QCryptographicHash hash(QCryptographicHash::Sha256);
         hash.addData(secret);
         hash.addData(clientChallenge);
         QByteArray cardCryptogram = hash.result();
-        
+
         // Generate card challenge (random or deterministic for testing)
         QByteArray cardChallenge = QByteArray(32, 0);
         for (int i = 0; i < 32; ++i) {
             cardChallenge[i] = QRandomGenerator::global()->bounded(256);
         }
-        
+
         // Generate salt (can be empty or random)
         QByteArray salt = QByteArray(32, 0);
-        
+
         QByteArray response;
         response.append(cardCryptogram);
         response.append(cardChallenge);
         response.append(salt);
-        
-        qDebug() << "[MockBackend] PAIR step 1: returning cryptogram:" << cardCryptogram.toHex();
-        
+
+        qDebug() << "StatusKeycardQt::[MockBackend] PAIR step 1: returning cryptogram:" << cardCryptogram.toHex();
+
         return successResponse(response);
     } else if (p1 == 0x01) {
         // Step 2: Verify client cryptogram, then return pairing info
-        
+
         // For mock, we skip cryptogram verification and just return pairing data
         QByteArray response;
         response.append(static_cast<char>(0x00)); // Pairing index 0
         response.append(QByteArray(32, 0x47)); // Pairing key (mock)
         response.append(QByteArray(16, 0x48)); // Pairing IV (mock)
         m_paired = true;
-        
-        qDebug() << "[MockBackend] PAIR step 2: pairing completed";
-        
+
+        qDebug() << "StatusKeycardQt::[MockBackend] PAIR step 2: pairing completed";
+
         return successResponse(response);
     }
-    
+
     return errorResponse(0x6A, 0x86); // Incorrect P1/P2
 }
 
@@ -424,12 +424,12 @@ QByteArray MockKeycardBackend::generateExportKeyResponse()
     // Generate a mock 65-byte public key (0x04 + 32 bytes X + 32 bytes Y)
     QByteArray pubKey;
     pubKey.append(static_cast<char>(0x04)); // Uncompressed point
-    
+
     // Generate deterministic but fake key data
     for (int i = 0; i < 64; i++) {
         pubKey.append(static_cast<char>(0xAA + (i % 16)));
     }
-    
+
     return successResponse(pubKey);
 }
 

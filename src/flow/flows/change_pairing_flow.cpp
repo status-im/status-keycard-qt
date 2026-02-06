@@ -18,7 +18,7 @@ QJsonObject ChangePairingFlow::execute()
         error[FlowParams::ERROR_KEY] = "auth-failed";
         return error;
     }
-    
+
     QString newPairing = params()[FlowParams::NEW_PAIRING].toString();
     if (newPairing.isEmpty()) {
         // Request new pairing code (empty error = normal request)
@@ -30,7 +30,7 @@ QJsonObject ChangePairingFlow::execute()
         }
         newPairing = params()[FlowParams::NEW_PAIRING].toString();
     }
-    
+
     // Phase 6: CommunicationManager is always available
     auto commMgr = communicationManager();
     if (!commMgr) {
@@ -39,17 +39,17 @@ QJsonObject ChangePairingFlow::execute()
         error[FlowParams::ERROR_KEY] = "change-failed";
         return error;
     }
-    
+
     auto cmd = std::make_unique<Keycard::ChangePairingCommand>(newPairing);
     Keycard::CommandResult result = commMgr->executeCommandSync(std::move(cmd), 30000);
-    
+
     if (!result.success) {
         QJsonObject error;
         error[FlowParams::ERROR_KEY] = "change-failed";
         return error;
     }
-    
-    qDebug() << "ChangePairingFlow: Pairing changed successfully";
+
+    qDebug() << "StatusKeycardQt::ChangePairingFlow: Pairing changed successfully";
     return buildCardInfoJson();
 }
 
