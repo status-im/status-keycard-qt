@@ -47,14 +47,14 @@ SessionManager::SessionManager(QObject* parent)
     // CRITICAL: Ensure we're in the main Qt thread for NFC events
     QThread* mainThread = QCoreApplication::instance()->thread();
     QThread* currentThread = QThread::currentThread();
-    
-    qDebug() << "SessionManager: Constructor called in thread:" << currentThread;
-    qDebug() << "SessionManager: Main thread is:" << mainThread;
-    
+
+    qDebug() << "StatusKeycardQt::SessionManager: Constructor called in thread:" << currentThread;
+    qDebug() << "StatusKeycardQt::SessionManager: Main thread is:" << mainThread;
+
     if (currentThread != mainThread) {
         qWarning() << "SessionManager: Created in wrong thread! Moving to main thread...";
         moveToThread(mainThread);
-        qDebug() << "SessionManager: Moved to main thread";
+        qDebug() << "StatusKeycardQt::SessionManager: Moved to main thread";
     }
 }
 
@@ -71,13 +71,13 @@ void SessionManager::setCommunicationManager(std::shared_ptr<Keycard::ICommunica
         qWarning() << "SessionManager: Cannot set CommunicationManager while started";
         return;
     }
-    
+
     if (m_commMgr == commMgr) {
-        qDebug() << "SessionManager::setCommunicationManager() - CommunicationManager not changed";
+        qDebug() << "StatusKeycardQt::SessionManager::setCommunicationManager() - CommunicationManager not changed";
         return;
     }
 
-    qDebug() << "SessionManager::setCommunicationManager() - Setting CommunicationManager";
+    qDebug() << "StatusKeycardQt::SessionManager::setCommunicationManager() - Setting CommunicationManager";
     m_commMgr = commMgr;
 }
 
@@ -88,32 +88,32 @@ bool SessionManager::start(bool logEnabled, const QString& logFilePath)
         qWarning() << "SessionManager: Call setCommunicationManager() before start()";
         return false;
     }
-    
-    qDebug() << "SessionManager: Starting with CommunicationManager";
+
+    qDebug() << "StatusKeycardQt::SessionManager: Starting with CommunicationManager";
 
     // Disconnect any previous connections
     QObject::disconnect(m_commMgr.get(), nullptr, this, nullptr);
-    
+
     // Connect to CommunicationManager signals
     // Use AutoConnection - direct if same thread, queued if cross-thread
     connect(m_commMgr.get(), &Keycard::ICommunicationManager::cardInitialized,
             this, &SessionManager::onCardInitialized,
             Qt::AutoConnection);
-    
+
     connect(m_commMgr.get(), &Keycard::ICommunicationManager::cardLost,
             this, &SessionManager::onCardRemoved,
             Qt::AutoConnection);
-    
+
     // Start card detection (CommunicationManager should already be init'd by caller)
     if (!m_commMgr->startDetection()) {
         qWarning() << "SessionManager: Failed to start card detection";
         return false;
     }
-    
+
     setState(SessionState::WaitingForCard);
     m_started = true;
-    
-    qDebug() << "SessionManager: Started successfully, monitoring for cards";
+
+    qDebug() << "StatusKeycardQt::SessionManager: Started successfully, monitoring for cards";
     return true;
 }
 
@@ -122,38 +122,38 @@ void SessionManager::stop()
     if (!m_started) {
         return;
     }
-    
-    qDebug() << "SessionManager: Stopping...";
-    
+
+    qDebug() << "StatusKeycardQt::SessionManager: Stopping...";
+
     // Stop card detection
     if (m_commMgr) {
         m_commMgr->stopDetection();
     }
-    
+
     m_started = false;
     m_currentCardUID.clear();
     setState(SessionState::UnknownReaderState);
-    
-    qDebug() << "SessionManager: Stopped (detection paused, can restart with start())";
+
+    qDebug() << "StatusKeycardQt::SessionManager: Stopped (detection paused, can restart with start())";
 }
 
 void SessionManager::setState(SessionState newState)
 {
-    qDebug() << "SessionManager::setState() - New state: "<< sessionStateToString(newState);
-    
+    qDebug() << "StatusKeycardQt::SessionManager::setState() - New state: "<< sessionStateToString(newState);
+
     SessionState oldState = m_state;
     m_state = newState;
-    
+
     // Emit Qt signal - c_api.cpp will forward to SignalManager
     emit stateChanged(newState, oldState);
 }
 
 void SessionManager::onCardInitialized(const Keycard::CardInitializationResult& result)
 {
-    qDebug() << "========================================";
-    qDebug() << "SessionManager: CARD INITIALIZED";
-    qDebug() << "========================================";
-    
+    qDebug() << "StatusKeycardQt::========================================";
+    qDebug() << "StatusKeycardQt::SessionManager: CARD INITIALIZED";
+    qDebug() << "StatusKeycardQt::========================================";
+
     // Update cached state from CommunicationManager
     m_currentCardUID = result.uid;
     m_appInfo = result.appInfo;
@@ -169,29 +169,29 @@ void SessionManager::onCardInitialized(const Keycard::CardInitializationResult& 
         }
         return;
     }
-    
+
     // Determine state based on card status
     if (!result.appInfo.initialized) {
-        qDebug() << "SessionManager: Card is empty (not initialized)";
+        qDebug() << "StatusKeycardQt::SessionManager: Card is empty (not initialized)";
         setState(SessionState::EmptyKeycard);
     } else {
-        qDebug() << "SessionManager: Card is ready";
+        qDebug() << "StatusKeycardQt::SessionManager: Card is ready";
         setState(SessionState::Ready);
     }
 }
 
 void SessionManager::onCardRemoved()
 {
-    qDebug() << "========================================";
-    qDebug() << "SessionManager: CARD REMOVED";
-    qDebug() << "========================================";
-    
+    qDebug() << "StatusKeycardQt::========================================";
+    qDebug() << "StatusKeycardQt::SessionManager: CARD REMOVED";
+    qDebug() << "StatusKeycardQt::========================================";
+
 #if defined(Q_OS_ANDROID) || defined(Q_OS_IOS)
-    qDebug() << "Ignoring card removal on mobile";
+    qDebug() << "StatusKeycardQt::Ignoring card removal on mobile";
     return;
 #else
     m_currentCardUID.clear();
-    
+
     if (m_started) {
         setState(SessionState::WaitingForCard);
     }
@@ -200,6 +200,7 @@ void SessionManager::onCardRemoved()
 
 void SessionManager::setError(const QString& error)
 {
+    qDebug() << "StatusKeycardQt::SessionManager::setError() - Error:" << error;
     m_lastError = error;
 }
 
@@ -212,7 +213,7 @@ SessionManager::Status SessionManager::getStatus() const
 {
     Status status;
     status.state = currentStateString();
-    
+
     // Build keycardInfo (if we have appInfo)
     if (!m_appInfo.instanceUID.isEmpty()) {
         status.keycardInfo = new ApplicationInfoV2();
@@ -246,22 +247,22 @@ SessionManager::Status SessionManager::getStatus() const
 
 bool SessionManager::initialize(const QString& pin, const QString& puk, const QString& pairingPassword)
 {
-    qDebug() << "SessionManager::initialize()";
+    qDebug() << "StatusKeycardQt::SessionManager::initialize()";
     QMutexLocker locker(&m_operationMutex);
-    
+
     if (!m_started) {
         setError("SessionManager not started");
         return false;
     }
-    
+
     if (!m_commMgr) {
         setError("No communication manager available");
         return false;
     }
-    
+
     auto cmd = std::make_unique<Keycard::InitCommand>(pin, puk, pairingPassword);
     Keycard::CommandResult result = m_commMgr->executeCommandSync(std::move(cmd), 60000);
-    
+
     if (result.success) {
         m_currentCardUID.clear();
         m_appInfo = m_commMgr->applicationInfo();
@@ -276,31 +277,31 @@ bool SessionManager::initialize(const QString& pin, const QString& puk, const QS
 
 bool SessionManager::authorize(const QString& pin)
 {
-    qDebug() << "SessionManager::authorize() - Thread:" << QThread::currentThread();
-    
+    qDebug() << "StatusKeycardQt::SessionManager::authorize() - Thread:" << QThread::currentThread();
+
     if (!m_started) {
         setError("SessionManager not started");
         return false;
     }
-    
+
     if (!m_commMgr) {
         setError("No communication manager available");
         return false;
     }
-    
+
     if (m_state != SessionState::Ready) {
         setError("Card not ready (current state: " + currentStateString() + ")");
         return false;
     }
-    
+
     auto cmd = std::make_unique<Keycard::VerifyPINCommand>(pin);
     Keycard::CommandResult result = m_commMgr->executeCommandSync(std::move(cmd), 30000);
-    
+
     if (result.success) {
         // Update status from result
         QVariantMap data = result.data.toMap();
         m_appStatus.pinRetryCount = data["remainingAttempts"].toInt();
-        
+
         setState(SessionState::Authorized);
         return true;
     } else {
@@ -327,12 +328,12 @@ bool SessionManager::changePIN(const QString& newPIN)
         setError("Not authorized");
         return false;
     }
-    
+
     auto cmd = std::make_unique<Keycard::ChangePINCommand>(newPIN);
     Keycard::CommandResult result = m_commMgr->executeCommandSync(std::move(cmd), 30000);
-    
+
     if (result.success) {
-        qDebug() << "SessionManager: PIN changed";
+        qDebug() << "StatusKeycardQt::SessionManager: PIN changed";
         return true;
     } else {
         setError(result.error);
@@ -358,12 +359,12 @@ bool SessionManager::changePUK(const QString& newPUK)
         setError("Not authorized");
         return false;
     }
-    
+
     auto cmd = std::make_unique<Keycard::ChangePUKCommand>(newPUK);
     Keycard::CommandResult result = m_commMgr->executeCommandSync(std::move(cmd), 30000);
-    
+
     if (result.success) {
-        qDebug() << "SessionManager: PUK changed";
+        qDebug() << "StatusKeycardQt::SessionManager: PUK changed";
         return true;
     } else {
         setError(result.error);
@@ -389,12 +390,12 @@ bool SessionManager::unblockPIN(const QString& puk, const QString& newPIN)
         setError("Card not ready");
         return false;
     }
-    
+
     auto cmd = std::make_unique<Keycard::UnblockPINCommand>(puk, newPIN);
     Keycard::CommandResult result = m_commMgr->executeCommandSync(std::move(cmd), 30000);
-    
+
     if (result.success) {
-        qDebug() << "SessionManager: PIN unblocked";
+        qDebug() << "StatusKeycardQt::SessionManager: PIN unblocked";
         return true;
     } else {
         setError(result.error);
@@ -423,10 +424,10 @@ QVector<int> SessionManager::generateMnemonic(int length)
     else if (length == 18) checksumSize = 6;
     else if (length == 21) checksumSize = 7;
     else if (length == 24) checksumSize = 8;
-    
+
     auto cmd = std::make_unique<Keycard::GenerateMnemonicCommand>(checksumSize);
     Keycard::CommandResult result = m_commMgr->executeCommandSync(std::move(cmd), 30000);
-    
+
     if (result.success) {
         QVariantList list = result.data.toList();
         QVector<int> indexes;
@@ -443,31 +444,31 @@ QVector<int> SessionManager::generateMnemonic(int length)
 QString SessionManager::loadMnemonic(const QString& mnemonic, const QString& passphrase)
 {
     QMutexLocker locker(&m_operationMutex);
-    
+
     if (!m_started) {
         setError("SessionManager not started");
         return QString();
     }
-    
+
     if (!m_commMgr) {
         setError("No communication manager available");
         return QString();
     }
-    
+
     // Convert mnemonic to BIP39 seed using PBKDF2
     // Formula: PBKDF2(NFKD(mnemonic), "mnemonic" + NFKD(passphrase), 2048, 64, SHA512)
-    
+
     // Normalize mnemonic and passphrase to NFKD form
     QString mnemonicNormalized = mnemonic.normalized(QString::NormalizationForm_D);
     QString passphraseNormalized = passphrase.normalized(QString::NormalizationForm_D);
-    
+
     // BIP39 salt = "mnemonic" + passphrase
     QString salt = QString("mnemonic") + passphraseNormalized;
-    
+
     // Use PBKDF2 to derive seed (64 bytes)
     QByteArray mnemonicBytes = mnemonicNormalized.toUtf8();
     QByteArray saltBytes = salt.toUtf8();
-    
+
     // Use OpenSSL's PBKDF2
     QByteArray seed(64, 0);
     int pbkdf2Result = PKCS5_PBKDF2_HMAC(
@@ -478,68 +479,68 @@ QString SessionManager::loadMnemonic(const QString& mnemonic, const QString& pas
         64,  // key length
         reinterpret_cast<unsigned char*>(seed.data())
     );
-    
+
     if (pbkdf2Result != 1) {
         setError("PBKDF2 derivation failed");
         return QString();
     }
-    
+
     // Load seed onto keycard
-    qDebug() << "SessionManager: Loading seed onto keycard (" << seed.size() << " bytes)";
-    
+    qDebug() << "StatusKeycardQt::SessionManager: Loading seed onto keycard (" << seed.size() << " bytes)";
+
     if (!m_commMgr) {
         setError("No communication manager available");
         return QString();
     }
-    
+
     auto cmd = std::make_unique<Keycard::LoadSeedCommand>(seed);
     Keycard::CommandResult result = m_commMgr->executeCommandSync(std::move(cmd), 60000);
-    
+
     if (!result.success) {
         setError(QString("Failed to load seed: %1").arg(result.error));
         return QString();
     }
-    
+
     QVariantMap data = result.data.toMap();
     QByteArray keyUID = QByteArray::fromHex(data["keyUID"].toString().toUtf8());
-    
-    qDebug() << "SessionManager: Seed loaded successfully, keyUID:" << keyUID.toHex();
-    
+
+    qDebug() << "StatusKeycardQt::SessionManager: Seed loaded successfully, keyUID:" << keyUID.toHex();
+
     return QString("0x") + keyUID.toHex();
 }
 
 bool SessionManager::factoryReset()
 {
     QMutexLocker locker(&m_operationMutex);
-    
+
     if (!m_started) {
         setError("SessionManager not started");
         return false;
     }
-    
+
     if (!m_commMgr) {
         setError("No communication manager available");
         return false;
     }
-    
+
     setState(SessionState::FactoryResetting);
-    
+
     auto cmd = std::make_unique<Keycard::FactoryResetCommand>();
     Keycard::CommandResult result = m_commMgr->executeCommandSync(std::move(cmd), 60000);
-    
+
     if (!result.success) {
         setError(result.error);
         setState(SessionState::InternalError);
         return false;
     }
-    
-    qDebug() << "SessionManager: Factory reset complete";
-    
+
+    qDebug() << "StatusKeycardQt::SessionManager: Factory reset complete";
+
     m_appInfo = m_commMgr->applicationInfo();
     m_currentCardUID.clear();
     m_appStatus = m_commMgr->applicationStatus();
     setState(SessionState::EmptyKeycard);
-    
+
     return true;
 }
 
@@ -557,12 +558,12 @@ static QString publicKeyToAddress(const QByteArray& pubKey) {
         qWarning() << "Invalid public key format";
         return QString();
     }
-    
+
     // Remove 0x04 prefix, hash with Keccak-256, take last 20 bytes
     QByteArray pubKeyData = pubKey.mid(1);
     QByteArray hash = QCryptographicHash::hash(pubKeyData, QCryptographicHash::Keccak_256);
     QByteArray address = hash.right(20);
-    
+
     return QString("0x") + address.toHex();
 }
 
@@ -572,14 +573,14 @@ static QByteArray derivePublicKeyFromPrivate(const QByteArray& privKey) {
         qWarning() << "derivePublicKeyFromPrivate: Invalid private key size:" << privKey.size();
         return QByteArray();
     }
-    
+
     // Create EC_KEY for secp256k1
     EC_KEY* eckey = EC_KEY_new_by_curve_name(NID_secp256k1);
     if (!eckey) {
         qWarning() << "derivePublicKeyFromPrivate: Failed to create EC_KEY";
         return QByteArray();
     }
-    
+
     // Set private key
     BIGNUM* priv_bn = BN_bin2bn(reinterpret_cast<const unsigned char*>(privKey.data()), privKey.size(), nullptr);
     if (!priv_bn || !EC_KEY_set_private_key(eckey, priv_bn)) {
@@ -588,7 +589,7 @@ static QByteArray derivePublicKeyFromPrivate(const QByteArray& privKey) {
         EC_KEY_free(eckey);
         return QByteArray();
     }
-    
+
     // Compute public key from private key
     const EC_GROUP* group = EC_KEY_get0_group(eckey);
     EC_POINT* pub_point = EC_POINT_new(group);
@@ -599,38 +600,38 @@ static QByteArray derivePublicKeyFromPrivate(const QByteArray& privKey) {
         EC_KEY_free(eckey);
         return QByteArray();
     }
-    
+
     EC_KEY_set_public_key(eckey, pub_point);
-    
+
     // Export public key in uncompressed format (0x04 + X + Y)
     unsigned char pub_key_bytes[65];
-    size_t pub_key_len = EC_POINT_point2oct(group, pub_point, POINT_CONVERSION_UNCOMPRESSED, 
+    size_t pub_key_len = EC_POINT_point2oct(group, pub_point, POINT_CONVERSION_UNCOMPRESSED,
                                             pub_key_bytes, sizeof(pub_key_bytes), nullptr);
-    
+
     BN_free(priv_bn);
     EC_POINT_free(pub_point);
     EC_KEY_free(eckey);
-    
+
     if (pub_key_len != 65) {
         qWarning() << "derivePublicKeyFromPrivate: Invalid public key length:" << pub_key_len;
         return QByteArray();
     }
-    
+
     return QByteArray(reinterpret_cast<const char*>(pub_key_bytes), pub_key_len);
 }
 
 // Parse exported key TLV response
 static SessionManager::KeyPair parseExportedKey(const QByteArray& data) {
     SessionManager::KeyPair keyPair;
-    
+
     if (data.isEmpty()) {
         qWarning() << "parseExportedKey: Empty data";
         return keyPair;
     }
-    
-    qDebug() << "parseExportedKey: Received" << data.size() << "bytes:";
-    qDebug() << "parseExportedKey: Hex dump:" << data.toHex();
-    
+
+    qDebug() << "StatusKeycardQt::parseExportedKey: Received" << data.size() << "bytes:";
+    qDebug() << "StatusKeycardQt::parseExportedKey: Hex dump:" << data.toHex();
+
     // Find template tag 0xA1 using common TLV utility
     QByteArray template_ = Keycard::TLV::findTag(data, 0xA1);
     if (template_.isEmpty()) {
@@ -639,39 +640,39 @@ static SessionManager::KeyPair parseExportedKey(const QByteArray& data) {
         qWarning() << "First 32 bytes:" << data.left(32).toHex();
         return keyPair;
     }
-    
+
     // Find public key (0x80)
     QByteArray pubKey = Keycard::TLV::findTag(template_, 0x80);
-    
+
     // Find private key (0x81) if available
     QByteArray privKey = Keycard::TLV::findTag(template_, 0x81);
     if (!privKey.isEmpty()) {
         keyPair.privateKey = privKey.toHex();
     }
-    
+
     // If public key is missing but private key is present, derive it
     if (pubKey.isEmpty() && !privKey.isEmpty()) {
-        qDebug() << "parseExportedKey: Deriving public key from private key";
+        qDebug() << "StatusKeycardQt::parseExportedKey: Deriving public key from private key";
         pubKey = derivePublicKeyFromPrivate(privKey);
         if (pubKey.isEmpty()) {
             qWarning() << "parseExportedKey: Failed to derive public key";
             return keyPair;
         }
-        qDebug() << "parseExportedKey: Derived public key:" << pubKey.toHex();
+        qDebug() << "StatusKeycardQt::parseExportedKey: Derived public key:" << pubKey.toHex();
     }
-    
+
     // Set public key and address
     if (!pubKey.isEmpty()) {
         keyPair.publicKey = pubKey.toHex();
         keyPair.address = publicKeyToAddress(pubKey);
     }
-    
+
     // Find chain code (0x82) if available
     QByteArray chainCode = Keycard::TLV::findTag(template_, 0x82);
     if (!chainCode.isEmpty()) {
         keyPair.chainCode = chainCode.toHex();
     }
-    
+
     return keyPair;
 }
 
@@ -684,16 +685,16 @@ QByteArray SessionManager::exportKeyInternal(bool derive, bool makeCurrent, cons
         setError("No communication manager available");
         return QByteArray();
     }
-    
+
     auto cmd = std::make_unique<Keycard::ExportKeyCommand>(derive, makeCurrent, path, exportType);
     Keycard::CommandResult result = m_commMgr->executeCommandSync(std::move(cmd), 30000);
-    
+
     if (!result.success) {
         setError(result.error);
         setState(SessionState::InternalError);
         return QByteArray();
     }
-    
+
     QVariantMap data = result.data.toMap();
     return data["keyData"].toByteArray();
 }
@@ -704,15 +705,15 @@ QByteArray SessionManager::exportKeyExtendedInternal(bool derive, bool makeCurre
         setError("No communication manager available");
         return QByteArray();
     }
-    
+
     auto cmd = std::make_unique<Keycard::ExportKeyExtendedCommand>(derive, makeCurrent, path);
     Keycard::CommandResult result = m_commMgr->executeCommandSync(std::move(cmd), 30000);
-    
+
     if (!result.success) {
         setError(result.error);
         return QByteArray();
     }
-    
+
     QVariantMap data = result.data.toMap();
     return data["keyData"].toByteArray();
 }
@@ -721,17 +722,17 @@ SessionManager::LoginKeys SessionManager::exportLoginKeys(bool isMainCommand)
 {
     // Serialize card operations to prevent concurrent APDU corruption
     QMutexLocker locker(&m_operationMutex);
-    
+
     // Clear any previous error
     m_lastError.clear();
-    
+
     LoginKeys keys;
-    
+
     if (m_state != SessionState::Authorized) {
         setError("Not authorized");
         return keys;
     }
-    
+
     if (!m_commMgr) {
         setError("No communication manager available");
         return keys;
@@ -741,39 +742,39 @@ SessionManager::LoginKeys SessionManager::exportLoginKeys(bool isMainCommand)
     if (isMainCommand) {
         m_commMgr->startBatchOperations();
     }
-    
+
     // Ensure we always end batch operations, even on error (only if we started it)
     // Lambda must accept pointer argument for unique_ptr deleter
-    auto batchGuard = [this, isMainCommand](void*) { 
+    auto batchGuard = [this, isMainCommand](void*) {
         if (isMainCommand) {
-            m_commMgr->endBatchOperations(); 
+            m_commMgr->endBatchOperations();
         }
     };
     std::unique_ptr<void, decltype(batchGuard)> guard(reinterpret_cast<void*>(1), batchGuard);
-    
+
     // Export encryption private key FIRST (matching status-keycard-go order)
     // Note: makeCurrent=false for all paths except master "m" (matching status-keycard-go)
-    qDebug() << "SessionManager: Exporting encryption key from path:" << PATH_ENCRYPTION;
+    qDebug() << "StatusKeycardQt::SessionManager: Exporting encryption key from path:" << PATH_ENCRYPTION;
     QByteArray encryptionData = exportKeyInternal(true, false, PATH_ENCRYPTION, Keycard::APDU::P2ExportKeyPrivateAndPublic);
     if (encryptionData.isEmpty()) {
         setError(QString("Failed to export encryption key: %1").arg(m_lastError));
         return keys;
     }
-    qDebug() << "SessionManager: Encryption key data size:" << encryptionData.size();
+    qDebug() << "StatusKeycardQt::SessionManager: Encryption key data size:" << encryptionData.size();
     keys.encryptionPrivateKey = parseExportedKey(encryptionData);
 
     // Export whisper private key SECOND (matching status-keycard-go order)
-    qDebug() << "SessionManager: Exporting whisper key from path:" << PATH_WHISPER;
+    qDebug() << "StatusKeycardQt::SessionManager: Exporting whisper key from path:" << PATH_WHISPER;
     QByteArray whisperData = exportKeyInternal(true, false, PATH_WHISPER, Keycard::APDU::P2ExportKeyPrivateAndPublic);
     if (whisperData.isEmpty()) {
         setError(QString("Failed to export whisper key: %1").arg(m_lastError));
         return keys;
     }
-    qDebug() << "SessionManager: Whisper key data size:" << whisperData.size();
+    qDebug() << "StatusKeycardQt::SessionManager: Whisper key data size:" << whisperData.size();
     keys.whisperPrivateKey = parseExportedKey(whisperData);
-    
-    qDebug() << "SessionManager: Login keys exported successfully";
-    
+
+    qDebug() << "StatusKeycardQt::SessionManager: Login keys exported successfully";
+
     return keys;
 }
 
@@ -781,38 +782,38 @@ SessionManager::RecoverKeys SessionManager::exportRecoverKeys()
 {
     // Serialize card operations to prevent concurrent APDU corruption
     QMutexLocker locker(&m_operationMutex);
-    
+
     // Clear any previous error
     m_lastError.clear();
-    
+
     RecoverKeys keys;
-    
+
     if (m_state != SessionState::Authorized) {
         setError("Not authorized");
         return keys;
     }
-    
+
     if (!m_commMgr) {
         setError("No communication manager available");
         return keys;
     }
-    
+
     // Start batch operations to keep channel open during all exports
     m_commMgr->startBatchOperations();
-    
+
     // Ensure we always end batch operations, even on error
     // Lambda must accept pointer argument for unique_ptr deleter
     auto batchGuard = [this](void*) { m_commMgr->endBatchOperations(); };
     std::unique_ptr<void, decltype(batchGuard)> guard(reinterpret_cast<void*>(1), batchGuard);
-    
-    qDebug() << "SessionManager: Exporting recover keys";
-    
+
+    qDebug() << "StatusKeycardQt::SessionManager: Exporting recover keys";
+
     // First export login keys
     keys.loginKeys = exportLoginKeys(false);
     if (!m_lastError.isEmpty()) {
         return keys;
     }
-    
+
     // Export EIP1581 key (public only)
     QByteArray eip1581Data = exportKeyInternal(true, false, PATH_EIP1581, Keycard::APDU::P2ExportKeyPublicOnly);
     if (eip1581Data.isEmpty()) {
@@ -820,20 +821,20 @@ SessionManager::RecoverKeys SessionManager::exportRecoverKeys()
         return keys;
     }
     keys.eip1581 = parseExportedKey(eip1581Data);
-    
+
     // Export wallet root key (extended public if supported, otherwise public only)
     // Check if card supports extended keys (version >= 3.1)
     bool supportsExtended = m_appInfo.appVersion >= 3 && m_appInfo.appVersionMinor >= 1;
     QByteArray walletRootData = supportsExtended ?
         exportKeyExtendedInternal(true, false, PATH_WALLET_ROOT) :
         exportKeyInternal(true, false, PATH_WALLET_ROOT, Keycard::APDU::P2ExportKeyPublicOnly);
-    
+
     if (walletRootData.isEmpty()) {
         setError(QString("Failed to export wallet root key: %1").arg(m_lastError));
         return keys;
     }
     keys.walletRootKey = parseExportedKey(walletRootData);
-    
+
     // Export wallet key (public only)
     QByteArray walletData = exportKeyInternal(true, false, PATH_WALLET, Keycard::APDU::P2ExportKeyPublicOnly);
     if (walletData.isEmpty()) {
@@ -841,7 +842,7 @@ SessionManager::RecoverKeys SessionManager::exportRecoverKeys()
         return keys;
     }
     keys.walletKey = parseExportedKey(walletData);
-    
+
     // Export master key (public only, derive=false since "m" doesn't need derivation)
     QByteArray masterData = exportKeyInternal(false, false, PATH_MASTER, Keycard::APDU::P2ExportKeyPublicOnly);
     if (masterData.isEmpty()) {
@@ -849,9 +850,9 @@ SessionManager::RecoverKeys SessionManager::exportRecoverKeys()
         return keys;
     }
     keys.masterKey = parseExportedKey(masterData);
-    
-    qDebug() << "SessionManager: Recover keys exported successfully";
-    
+
+    qDebug() << "StatusKeycardQt::SessionManager: Recover keys exported successfully";
+
     return keys;
 }
 
@@ -868,52 +869,52 @@ SessionManager::Metadata SessionManager::getMetadata(bool isMainCommand)
         setError("No communication manager available");
         return metadata;
     }
-    
+
     // Get metadata from card using proper command queue (matching status-keycard-go GetMetadata)
-    qDebug() << "SessionManager: Getting metadata from card";
-    
+    qDebug() << "StatusKeycardQt::SessionManager: Getting metadata from card";
+
     auto cmd = std::make_unique<Keycard::GetMetadataCommand>();
     Keycard::CommandResult result = m_commMgr->executeCommandSync(std::move(cmd), 30000);
-    
+
     if (!result.success) {
         // Not an error - might just be empty
-        qDebug() << "SessionManager: No metadata on card or error:" << result.error;
+        qDebug() << "StatusKeycardQt::SessionManager: No metadata on card or error:" << result.error;
         return metadata;
     }
-    
+
     QVariantMap data = result.data.toMap();
     QByteArray metadataData = data["tlvData"].toByteArray();
-    
+
     if (metadataData.isEmpty()) {
         // Not an error - card might not have metadata yet
-        qDebug() << "SessionManager: No metadata on card";
+        qDebug() << "StatusKeycardQt::SessionManager: No metadata on card";
         return metadata;
     }
-    
+
     // Parse metadata using Go's custom binary format (matching types/metadata.go ParseMetadata())
     // Format: [version+namelen][name][start/count pairs in LEB128]
     //   Byte 0: version (3 bits) + name length (5 bits)
     //   Bytes 1..namelen: card name
     //   Remaining: series of start/count LEB128 pairs for wallet paths
-    
+
     int offset = 0;
     if (offset >= metadataData.size()) {
-        qDebug() << "SessionManager: Metadata too short";
+        qDebug() << "StatusKeycardQt::SessionManager: Metadata too short";
         return metadata;
     }
-    
+
     // Parse header byte
     uint8_t header = static_cast<uint8_t>(metadataData[offset++]);
     uint8_t version = header >> 5;
     uint8_t namelen = header & 0x1F;
-    
-    qDebug() << "SessionManager: Metadata version:" << version << "namelen:" << namelen;
-    
+
+    qDebug() << "StatusKeycardQt::SessionManager: Metadata version:" << version << "namelen:" << namelen;
+
     if (version != 1) {
         qWarning() << "SessionManager: Invalid metadata version:" << version;
         return metadata;
     }
-    
+
     // Parse card name
     if (namelen > 0) {
         if (offset + namelen > metadataData.size()) {
@@ -923,9 +924,9 @@ SessionManager::Metadata SessionManager::getMetadata(bool isMainCommand)
         QByteArray nameData = metadataData.mid(offset, namelen);
         metadata.name = QString::fromUtf8(nameData);
         offset += namelen;
-        qDebug() << "SessionManager: Card name:" << metadata.name;
+        qDebug() << "StatusKeycardQt::SessionManager: Card name:" << metadata.name;
     }
-    
+
     // Parse wallet paths (LEB128 encoded start/count pairs)
     while (offset < metadataData.size()) {
         // Parse start index (LEB128)
@@ -937,9 +938,9 @@ SessionManager::Metadata SessionManager::getMetadata(bool isMainCommand)
             if ((byte & 0x80) == 0) break;
             shift += 7;
         }
-        
+
         if (offset >= metadataData.size()) break;
-        
+
         // Parse count (LEB128)
         uint32_t count = 0;
         shift = 0;
@@ -949,7 +950,7 @@ SessionManager::Metadata SessionManager::getMetadata(bool isMainCommand)
             if ((byte & 0x80) == 0) break;
             shift += 7;
         }
-        
+
         // Add all paths in range [start, start+count]
         // Expand to full paths like Go's ToMetadata() does
         for (uint32_t i = start; i <= start + count; ++i) {
@@ -961,38 +962,38 @@ SessionManager::Metadata SessionManager::getMetadata(bool isMainCommand)
             metadata.wallets.append(wallet);
         }
     }
-    
-    qDebug() << "SessionManager: Metadata retrieved - name:" << metadata.name
+
+    qDebug() << "StatusKeycardQt::SessionManager: Metadata retrieved - name:" << metadata.name
              << "wallets:" << metadata.wallets.size();
-    
+
     return metadata;
 }
 
 bool SessionManager::storeMetadata(const QString& name, const QStringList& paths)
 {
-    qDebug() << "SessionManager: Storing metadata - name:" << name << "paths:" << paths.size();
+    qDebug() << "StatusKeycardQt::SessionManager: Storing metadata - name:" << name << "paths:" << paths.size();
     QMutexLocker locker(&m_operationMutex);
 
     if (m_state != SessionState::Authorized) {
         setError("Not authorized");
         return false;
     }
-    
+
     if (!m_commMgr) {
         setError("No communication manager available");
         return false;
     }
-    
+
     // Store metadata using proper command queue
     auto cmd = std::make_unique<Keycard::StoreMetadataCommand>(name, paths);
     Keycard::CommandResult result = m_commMgr->executeCommandSync(std::move(cmd), 30000);
-    
+
     if (!result.success) {
         setError(QString("Failed to store metadata: %1").arg(result.error));
         return false;
     }
-    
-    qDebug() << "SessionManager: Metadata stored successfully";
+
+    qDebug() << "StatusKeycardQt::SessionManager: Metadata stored successfully";
 
     m_metadata.name = name;
     for (const QString& path : paths) {

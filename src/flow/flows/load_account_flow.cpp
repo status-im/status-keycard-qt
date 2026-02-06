@@ -21,8 +21,8 @@ LoadAccountFlow::~LoadAccountFlow()
 
 QJsonObject LoadAccountFlow::execute()
 {
-    qDebug() << "LoadAccountFlow::execute()";
-    
+    qDebug() << "StatusKeycardQt::LoadAccountFlow::execute()";
+
     if (!selectKeycard()) {
         QJsonObject error;
         error[FlowParams::ERROR_KEY] = "select-failed";

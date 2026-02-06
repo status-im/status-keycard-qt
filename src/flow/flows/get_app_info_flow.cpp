@@ -21,14 +21,14 @@ GetAppInfoFlow::~GetAppInfoFlow()
 
 QJsonObject GetAppInfoFlow::execute()
 {
-    qDebug() << "GetAppInfoFlow: Starting execution";
-    
+    qDebug() << "StatusKeycardQt::GetAppInfoFlow: Starting execution";
+
     // Check if factory reset is requested
     bool factoryReset = params().value("factory reset").toBool();
     if (factoryReset) {
-        qDebug() << "GetAppInfoFlow: Factory reset requested";
+        qDebug() << "StatusKeycardQt::GetAppInfoFlow: Factory reset requested";
     }
-    
+
     // 1. Select keycard applet
     if (!selectKeycard()) {
         qCritical() << "GetAppInfoFlow: Failed to select keycard";
@@ -36,14 +36,14 @@ QJsonObject GetAppInfoFlow::execute()
         error[FlowParams::ERROR_KEY] = "select-failed";
         return error;
     }
-    
+
     // 2. If factory reset requested, execute it BEFORE checking card state
     if (factoryReset && cardInfo().initialized) {
-        qDebug() << "GetAppInfoFlow: Executing factory reset";
-        
+        qDebug() << "StatusKeycardQt::GetAppInfoFlow: Executing factory reset";
+
         // Factory reset does NOT require authentication or PIN
         // (matches status-keycard-go behavior - only requires SELECT)
-        
+
         // Phase 6: CommunicationManager is always available
         auto commMgr = communicationManager();
         if (!commMgr) {
@@ -52,18 +52,18 @@ QJsonObject GetAppInfoFlow::execute()
             error[FlowParams::ERROR_KEY] = "factory-reset-failed";
             return error;
         }
-        
+
         auto cmd = std::make_unique<Keycard::FactoryResetCommand>();
         Keycard::CommandResult result = commMgr->executeCommandSync(std::move(cmd), 60000);
-        
+
         if (!result.success) {
             qWarning() << "GetAppInfoFlow: Factory reset failed:" << result.error;
             QJsonObject error;
             error[FlowParams::ERROR_KEY] = "factory-reset-failed";
             return error;
         }
-        
-        qDebug() << "GetAppInfoFlow: Factory reset SUCCESS";
+
+        qDebug() << "StatusKeycardQt::GetAppInfoFlow: Factory reset SUCCESS";
 
         // Verify factory reset worked
         if (cardInfo().initialized) {
@@ -74,7 +74,7 @@ QJsonObject GetAppInfoFlow::execute()
 
         selectKeycard();
     }
-    
+
     // 3. Build basic app info result
     QJsonObject appInfo;
     appInfo[FlowParams::INSTANCE_UID] = cardInfo().instanceUID;
@@ -85,7 +85,7 @@ QJsonObject GetAppInfoFlow::execute()
     appInfo["version"] = QString("%1.%2")
         .arg((cardInfo().version >> 8) & 0xFF)
         .arg(cardInfo().version & 0xFF);
-    
+
     QJsonObject result;
     result[FlowParams::ERROR_KEY] = "ok";
     result[FlowParams::APP_INFO] = appInfo;
@@ -93,7 +93,7 @@ QJsonObject GetAppInfoFlow::execute()
     if (!cardInfo().initialized) {
         return result;
     }
-    
+
     // 4. Try to authenticate (to check if paired)
     //    This may pause for pairing password or PIN
     //    If user cancels, that's OK - we just mark as not paired
@@ -103,9 +103,9 @@ QJsonObject GetAppInfoFlow::execute()
         error[FlowParams::PAIRED] = false;
         return error;
     }
-    
+
     result[FlowParams::PAIRED] = true;
-    qDebug() << "GetAppInfoFlow: Execution completed successfully";
+    qDebug() << "StatusKeycardQt::GetAppInfoFlow: Execution completed successfully";
     return result;
 }
 

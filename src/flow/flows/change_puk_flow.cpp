@@ -18,13 +18,13 @@ QJsonObject ChangePUKFlow::execute()
         error[FlowParams::ERROR_KEY] = "card-error";
         return error;
     }
-    
+
     if (!verifyPIN()) {
         QJsonObject error;
         error[FlowParams::ERROR_KEY] = "auth-failed";
         return error;
     }
-    
+
     QString newPUK = params()[FlowParams::NEW_PUK].toString();
     if (newPUK.isEmpty()) {
         // Request new PUK (empty error = normal request)
@@ -36,7 +36,7 @@ QJsonObject ChangePUKFlow::execute()
         }
         newPUK = params()[FlowParams::NEW_PUK].toString();
     }
-    
+
     // Phase 6: CommunicationManager is always available
     auto commMgr = communicationManager();
     if (!commMgr) {
@@ -45,17 +45,17 @@ QJsonObject ChangePUKFlow::execute()
         error[FlowParams::ERROR_KEY] = "change-failed";
         return error;
     }
-    
+
     auto cmd = std::make_unique<Keycard::ChangePUKCommand>(newPUK);
     Keycard::CommandResult result = commMgr->executeCommandSync(std::move(cmd), 30000);
-    
+
     if (!result.success) {
         QJsonObject error;
         error[FlowParams::ERROR_KEY] = "change-failed";
         return error;
     }
-    
-    qDebug() << "ChangePUKFlow: PUK changed successfully";
+
+    qDebug() << "StatusKeycardQt::ChangePUKFlow: PUK changed successfully";
     return buildCardInfoJson();
 }
 
