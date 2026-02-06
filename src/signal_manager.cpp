@@ -34,6 +34,11 @@ void SignalManager::setCallback(SignalCallback callback)
 
 void SignalManager::emitStatusChanged(const SessionManager::Status& status)
 {
+    if (status.state == m_lastStatusState) {
+        return;
+    }
+    m_lastStatusState = status.state;
+
     // Build the event object with the exact structure from status-keycard-go
     QJsonObject event;
     event["state"] = status.state;
@@ -116,6 +121,11 @@ void SignalManager::emitSignal(const QString& jsonSignal)
 
 void SignalManager::emitChannelStateChanged(const QString& state)
 {
+    if (state == m_lastChannelState) {
+        return;
+    }
+    m_lastChannelState = state;
+
     QJsonObject event;
     event["state"] = state;
     
@@ -127,6 +137,12 @@ void SignalManager::emitChannelStateChanged(const QString& state)
     QString jsonString = QString::fromUtf8(doc.toJson(QJsonDocument::Compact));
     
     sendSignal(jsonString);
+}
+
+void SignalManager::resetLastStates()
+{
+    m_lastStatusState.clear();
+    m_lastChannelState.clear();
 }
 
 void SignalManager::sendSignal(const QString& jsonSignal)
