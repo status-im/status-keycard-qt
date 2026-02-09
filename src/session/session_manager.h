@@ -90,7 +90,9 @@ public:
         KeyPair walletKey;
         KeyPair masterKey;
     };
-    RecoverKeys exportRecoverKeys();
+    RecoverKeys exportRecoverKeys(bool isMainCommand = true);
+    RecoverKeys recover(const QString& pin, const QString& puk, const QString& pairingPassword, const QString& mnemonic,
+                        bool logEnabled = false, const QString& logFilePath = QString());
 
     // Status structures (matching status-keycard-go exactly)
     struct Wallet {
