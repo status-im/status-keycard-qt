@@ -154,6 +154,9 @@ private:
     bool ensureStarted();
     bool ensureAuthorized();
 
+    // Fetch fresh app status from card and publish status-changed signal
+    void updateAndPublishStatus(bool authorized);
+
     // Helper for exporting keys
     QByteArray exportKeyInternal(bool derive, bool makeCurrent, const QString& path, uint8_t exportType = 0x00);
     QByteArray exportKeyExtendedInternal(bool derive, bool makeCurrent, const QString& path);

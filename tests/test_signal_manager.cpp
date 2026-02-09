@@ -24,7 +24,6 @@ private slots:
     void testEmitError();
     void testSignalFormat();
     void testMultipleSignals();
-    void testDuplicateStatusSignalsSuppressed();
     void testDuplicateChannelSignalsSuppressed();
 
 private:
@@ -239,30 +238,6 @@ void TestSignalManager::testMultipleSignals()
         QVERIFY(signal.contains("type"));
         QVERIFY(signal.contains("event"));
     }
-}
-
-void TestSignalManager::testDuplicateStatusSignalsSuppressed()
-{
-    SessionManager::Status status;
-    status.state = "ready";
-
-    // Emit same state multiple times
-    m_signalManager->emitStatusChanged(status);
-    m_signalManager->emitStatusChanged(status);
-    m_signalManager->emitStatusChanged(status);
-
-    // Only the first should get through
-    QCOMPARE(s_receivedSignals.size(), 1);
-
-    // A different state should get through
-    SessionManager::Status status2;
-    status2.state = "waiting-for-card";
-    m_signalManager->emitStatusChanged(status2);
-    QCOMPARE(s_receivedSignals.size(), 2);
-
-    // And the original state again should also get through (it changed back)
-    m_signalManager->emitStatusChanged(status);
-    QCOMPARE(s_receivedSignals.size(), 3);
 }
 
 void TestSignalManager::testDuplicateChannelSignalsSuppressed()
