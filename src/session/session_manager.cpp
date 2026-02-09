@@ -253,6 +253,28 @@ bool SessionManager::ensureAuthorized()
     return true;
 }
 
+void SessionManager::updateAndPublishStatus(bool authorized)
+{
+    auto statusCmd = std::make_unique<Keycard::GetStatusCommand>();
+    Keycard::CommandResult statusResult = m_commMgr->executeCommandSync(std::move(statusCmd), 30000);
+    if (statusResult.success) {
+        QVariantMap statusData = statusResult.data.toMap();
+        m_appStatus.pinRetryCount = statusData["pinRetryCount"].toInt();
+        m_appStatus.pukRetryCount = statusData["pukRetryCount"].toInt();
+    }
+
+    // Determine state based on updated status
+    if (m_appStatus.pinRetryCount == 0) {
+        setState(SessionState::BlockedPIN);
+    } else if (m_appStatus.pukRetryCount == 0) {
+        setState(SessionState::BlockedPUK);
+    } else if (m_state == SessionState::Ready && authorized) {
+        setState(SessionState::Authorized);
+    } else {
+        setState(m_state);
+    }
+}
+
 QString SessionManager::currentStateString() const
 {
     return sessionStateToString(m_state);
@@ -337,24 +359,7 @@ bool SessionManager::authorize(const QString& pin)
     Keycard::CommandResult result = m_commMgr->executeCommandSync(std::move(cmd), 30000);
     bool authorized = result.success;
 
-    auto statusCmd = std::make_unique<Keycard::GetStatusCommand>();
-    Keycard::CommandResult statusResult = m_commMgr->executeCommandSync(std::move(statusCmd), 30000);
-    if (statusResult.success) {
-        QVariantMap statusData = statusResult.data.toMap();
-        m_appStatus.pinRetryCount = statusData["pinRetryCount"].toInt();
-        m_appStatus.pukRetryCount = statusData["pukRetryCount"].toInt();
-    }
-
-    // Determine state based on updated status
-    if (m_appStatus.pinRetryCount == 0) {
-        setState(SessionState::BlockedPIN);
-    } else if (m_appStatus.pukRetryCount == 0) {
-        setState(SessionState::BlockedPUK);
-    } else if (authorized) {
-        setState(SessionState::Authorized);
-    } else {
-        setState(SessionState::Ready);
-    }
+    updateAndPublishStatus(authorized);
 
     if (!authorized) {
         setError(result.error);

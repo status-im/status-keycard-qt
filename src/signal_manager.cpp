@@ -34,11 +34,6 @@ void SignalManager::setCallback(SignalCallback callback)
 
 void SignalManager::emitStatusChanged(const SessionManager::Status& status)
 {
-    if (status.state == m_lastStatusState) {
-        return;
-    }
-    m_lastStatusState = status.state;
-
     // Build the event object with the exact structure from status-keycard-go
     QJsonObject event;
     event["state"] = status.state;
@@ -141,7 +136,6 @@ void SignalManager::emitChannelStateChanged(const QString& state)
 
 void SignalManager::resetLastStates()
 {
-    m_lastStatusState.clear();
     m_lastChannelState.clear();
 }
 

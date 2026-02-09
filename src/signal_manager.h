@@ -10,7 +10,7 @@ namespace StatusKeycard {
 
 /**
  * @brief Manages signal callbacks to Nim/C code
- * 
+ *
  * Bridges Qt signals to C callback mechanism.
  */
 class SignalManager : public QObject {
@@ -18,7 +18,7 @@ class SignalManager : public QObject {
 
 public:
     static SignalManager* instance();
-    
+
     void setCallback(SignalCallback callback);
     void emitStatusChanged(const SessionManager::Status& status);
     void emitError(const QString& error);
@@ -29,11 +29,10 @@ public:
 private:
     SignalManager();
     ~SignalManager();
-    
+
     void sendSignal(const QString& jsonSignal);
 
     SignalCallback m_callback;
-    QString m_lastStatusState;
     QString m_lastChannelState;
     static SignalManager* s_instance;
 };
