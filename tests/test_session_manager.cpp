@@ -292,6 +292,12 @@ private slots:
             Keycard::CommandResult::fromError("Wrong PIN");
         m_mockComm->setNextCommandResult(failureResult);
 
+        // Queue result for GetStatusCommand (called by authorize to refresh app status)
+        QVariantMap statusData;
+        statusData["pinRetryCount"] = 2;
+        statusData["pukRetryCount"] = 5;
+        m_mockComm->setNextCommandResult(Keycard::CommandResult::fromSuccess(statusData));
+
         // Try to authorize with wrong PIN
         bool result = m_manager->authorize("wrong-pin");
 
@@ -308,6 +314,12 @@ private slots:
         // Set mock to return success for VERIFY_PIN command
         Keycard::CommandResult successResult = Keycard::CommandResult::fromSuccess();
         m_mockComm->setNextCommandResult(successResult);
+
+        // Queue result for GetStatusCommand (called by authorize to refresh app status)
+        QVariantMap statusData;
+        statusData["pinRetryCount"] = 3;
+        statusData["pukRetryCount"] = 5;
+        m_mockComm->setNextCommandResult(Keycard::CommandResult::fromSuccess(statusData));
 
         // Authorize should succeed
         bool result = m_manager->authorize("123456");

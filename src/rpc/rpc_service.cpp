@@ -9,6 +9,10 @@
 
 namespace StatusKeycard {
 
+    const int PinLength = 6; // 6 digits
+    const int PukLength = 12; // 12 digits
+    const int KeyUidLengthWithout0x = 64; // 64 characters in hex, without 0x prefix
+
 RpcService::RpcService(QObject* parent)
     : QObject(parent)
     , m_sessionManager(std::make_unique<SessionManager>())
@@ -94,6 +98,8 @@ QString RpcService::processRequest(const QString& requestJson) {
         response = handleExportLoginKeys(id, params);
     } else if (method == "keycard.ExportRecoverKeys") {
         response = handleExportRecoverKeys(id, params);
+    } else if (method == "keycard.Login") {
+        response = handleLogin(id, params);
     } else {
         response = createErrorResponse(id, -32601, QString("Method not found: %1").arg(method));
     }
@@ -176,17 +182,17 @@ QJsonObject RpcService::statusToJson(const SessionManager::Status& status) {
 }
 
 // ============================================================================
-// RPC Method Handlers
+// Common helpers
 // ============================================================================
 
-QJsonObject RpcService::handleStart(quint64 id, const QJsonObject& params) {
-    qDebug() << "StatusKeycardQt::RpcService::handleStart() called on RpcService at:" << (void*)this;
-    qDebug() << "StatusKeycardQt::SessionManager at:" << (void*)m_sessionManager.get();
+QString remove0xPrefix(const QString& str) {
+    if (str.startsWith("0x")) {
+        return str.mid(2);
+    }
+    return str;
+}
 
-    QString storagePath = params["storageFilePath"].toString();
-    bool logEnabled = params["logEnabled"].toBool(false);
-    QString logFilePath = params["logFilePath"].toString();
-
+QJsonObject RpcService::validateAndConfigureStorage(quint64 id, const QString& storagePath) {
     if (storagePath.isEmpty()) {
         return createErrorResponse(id, -32602, "storageFilePath is required");
     }
@@ -207,6 +213,47 @@ QJsonObject RpcService::handleStart(quint64 id, const QJsonObject& params) {
                 return createErrorResponse(id, -32000, "Failed to create pairing storage at: " + storagePath);
             }
         }
+    }
+
+    return QJsonObject();
+}
+
+QJsonObject RpcService::loginKeysToJson(const SessionManager::LoginKeys& keys) {
+    QJsonObject whisperKey;
+    whisperKey["address"] = keys.whisperPrivateKey.address;
+    whisperKey["publicKey"] = keys.whisperPrivateKey.publicKey;
+    whisperKey["privateKey"] = keys.whisperPrivateKey.privateKey;
+
+    QJsonObject encryptionKey;
+    encryptionKey["address"] = keys.encryptionPrivateKey.address;
+    encryptionKey["publicKey"] = keys.encryptionPrivateKey.publicKey;
+    encryptionKey["privateKey"] = keys.encryptionPrivateKey.privateKey;
+
+    QJsonObject keysObject;
+    keysObject["whisperPrivateKey"] = whisperKey;
+    keysObject["encryptionPrivateKey"] = encryptionKey;
+
+    QJsonObject result;
+    result["keys"] = keysObject;
+
+    return result;
+}
+
+// ============================================================================
+// RPC Method Handlers
+// ============================================================================
+
+QJsonObject RpcService::handleStart(quint64 id, const QJsonObject& params) {
+    qDebug() << "StatusKeycardQt::RpcService::handleStart() called on RpcService at:" << (void*)this;
+    qDebug() << "StatusKeycardQt::SessionManager at:" << (void*)m_sessionManager.get();
+
+    QString storagePath = params["storageFilePath"].toString();
+    bool logEnabled = params["logEnabled"].toBool(false);
+    QString logFilePath = params["logFilePath"].toString();
+
+    QJsonObject validationError = validateAndConfigureStorage(id, storagePath);
+    if (!validationError.isEmpty()) {
+        return validationError;
     }
 
     bool success = m_sessionManager->start(logEnabled, logFilePath);
@@ -237,11 +284,11 @@ QJsonObject RpcService::handleInitialize(quint64 id, const QJsonObject& params) 
     QString puk = params["puk"].toString();
     QString pairingPassword = params["pairingPassword"].toString();
 
-    if (pin.length() != 6) {
-        return createErrorResponse(id, -32602, "PIN must be 6 digits");
+    if (pin.length() != PinLength) {
+        return createErrorResponse(id, -32602, "PIN must be " + QString::number(PinLength) + " digits");
     }
-    if (puk.length() != 12) {
-        return createErrorResponse(id, -32602, "PUK must be 12 digits");
+    if (puk.length() != PukLength) {
+        return createErrorResponse(id, -32602, "PUK must be " + QString::number(PukLength) + " digits");
     }
 
     bool success = m_sessionManager->initialize(pin, puk, pairingPassword);
@@ -255,8 +302,8 @@ QJsonObject RpcService::handleInitialize(quint64 id, const QJsonObject& params) 
 QJsonObject RpcService::handleAuthorize(quint64 id, const QJsonObject& params) {
     QString pin = params["pin"].toString();
 
-    if (pin.length() != 6) {
-        return createErrorResponse(id, -32602, "PIN must be 6 digits");
+    if (pin.length() != PinLength) {
+        return createErrorResponse(id, -32602, "PIN must be " + QString::number(PinLength) + " digits");
     }
 
     bool authorized = m_sessionManager->authorize(pin);
@@ -270,7 +317,7 @@ QJsonObject RpcService::handleAuthorize(quint64 id, const QJsonObject& params) {
 QJsonObject RpcService::handleChangePIN(quint64 id, const QJsonObject& params) {
     QString newPin = params["newPin"].toString();
 
-    if (newPin.length() != 6) {
+    if (newPin.length() != PinLength) {
         return createErrorResponse(id, -32602, "New PIN must be 6 digits");
     }
 
@@ -285,8 +332,8 @@ QJsonObject RpcService::handleChangePIN(quint64 id, const QJsonObject& params) {
 QJsonObject RpcService::handleChangePUK(quint64 id, const QJsonObject& params) {
     QString newPuk = params["newPuk"].toString();
 
-    if (newPuk.length() != 12) {
-        return createErrorResponse(id, -32602, "New PUK must be 12 digits");
+    if (newPuk.length() != PukLength) {
+        return createErrorResponse(id, -32602, "New PUK must be " + QString::number(PukLength) + " digits");
     }
 
     bool success = m_sessionManager->changePUK(newPuk);
@@ -301,11 +348,11 @@ QJsonObject RpcService::handleUnblock(quint64 id, const QJsonObject& params) {
     QString puk = params["puk"].toString();
     QString newPin = params["newPin"].toString();
 
-    if (puk.length() != 12) {
-        return createErrorResponse(id, -32602, "PUK must be 12 digits");
+    if (puk.length() != PukLength) {
+        return createErrorResponse(id, -32602, "PUK must be " + QString::number(PukLength) + " digits");
     }
-    if (newPin.length() != 6) {
-        return createErrorResponse(id, -32602, "New PIN must be 6 digits");
+    if (newPin.length() != PinLength) {
+        return createErrorResponse(id, -32602, "New PIN must be " + QString::number(PinLength) + " digits");
     }
 
     bool success = m_sessionManager->unblockPIN(puk, newPin);
@@ -414,26 +461,7 @@ QJsonObject RpcService::handleExportLoginKeys(quint64 id, const QJsonObject& par
         return createErrorResponse(id, -32000, m_sessionManager->lastError());
     }
 
-    // Convert to JSON matching status-keycard-go format
-    QJsonObject whisperKey;
-    whisperKey["address"] = keys.whisperPrivateKey.address;
-    whisperKey["publicKey"] = keys.whisperPrivateKey.publicKey;
-    whisperKey["privateKey"] = keys.whisperPrivateKey.privateKey;
-
-    QJsonObject encryptionKey;
-    encryptionKey["address"] = keys.encryptionPrivateKey.address;
-    encryptionKey["publicKey"] = keys.encryptionPrivateKey.publicKey;
-    encryptionKey["privateKey"] = keys.encryptionPrivateKey.privateKey;
-
-    // Wrap in "keys" object to match status-keycard-go response format
-    QJsonObject keysObject;
-    keysObject["whisperPrivateKey"] = whisperKey;
-    keysObject["encryptionPrivateKey"] = encryptionKey;
-
-    QJsonObject result;
-    result["keys"] = keysObject;
-
-    return createSuccessResponse(id, result);
+    return createSuccessResponse(id, loginKeysToJson(keys));
 }
 
 QJsonObject RpcService::handleExportRecoverKeys(quint64 id, const QJsonObject& params) {
@@ -471,6 +499,43 @@ QJsonObject RpcService::handleExportRecoverKeys(quint64 id, const QJsonObject& p
     result["keys"] = keysObj;
 
     return createSuccessResponse(id, result);
+}
+
+// ============================================================================
+// RPC Composite Method Handlers
+// ============================================================================
+
+QJsonObject RpcService::handleLogin(quint64 id, const QJsonObject& params) {
+    QString storagePath = params["storageFilePath"].toString();
+    QString keyUid = params["keyUid"].toString();
+    QString pin = params["pin"].toString();
+    bool logEnabled = params["logEnabled"].toBool(false);
+    QString logFilePath = params["logFilePath"].toString();
+
+    if (storagePath.isEmpty()) {
+        return createErrorResponse(id, -32602, "Missing required parameter: storageFilePath");
+    }
+
+    const QString keyUidWithout0x = remove0xPrefix(keyUid);
+    if (keyUidWithout0x.length() != KeyUidLengthWithout0x) {
+        return createErrorResponse(id, -32602, "keyUid must be " + QString::number(KeyUidLengthWithout0x) + " characters in hex, without 0x prefix");
+    }
+
+    if (pin.length() != PinLength) {
+        return createErrorResponse(id, -32602, "PIN must be " + QString::number(PinLength) + " digits");
+    }
+
+    QJsonObject validationError = validateAndConfigureStorage(id, storagePath);
+    if (!validationError.isEmpty()) {
+        return validationError;
+    }
+
+    SessionManager::LoginKeys keys = m_sessionManager->login(keyUidWithout0x, pin, logEnabled, logFilePath);
+    if (!m_sessionManager->lastError().isEmpty()) {
+        return createErrorResponse(id, -32000, m_sessionManager->lastError());
+    }
+
+    return createSuccessResponse(id, loginKeysToJson(keys));
 }
 
 } // namespace StatusKeycard
