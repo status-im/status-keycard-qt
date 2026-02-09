@@ -187,6 +187,12 @@ void SessionManager::onCardInitialized(const Keycard::CardInitializationResult& 
     if (!result.appInfo.initialized) {
         qDebug() << "StatusKeycardQt::SessionManager: Card is empty (not initialized)";
         setState(SessionState::EmptyKeycard);
+    } else if (m_appStatus.pinRetryCount == 0) {
+        qDebug() << "StatusKeycardQt::SessionManager: PIN is blocked";
+        setState(SessionState::BlockedPIN);
+    } else if (m_appStatus.pukRetryCount == 0) {
+        qDebug() << "StatusKeycardQt::SessionManager: PUK is blocked";
+        setState(SessionState::BlockedPUK);
     } else {
         qDebug() << "StatusKeycardQt::SessionManager: Card is ready";
         setState(SessionState::Ready);
@@ -268,7 +274,9 @@ SessionManager::Status SessionManager::getStatus() const
         status.keycardInfo->keyUID = m_appInfo.keyUID.toHex();
     }
 
-    if ((m_state == SessionState::Ready || m_state == SessionState::Authorized) && m_appStatus.pinRetryCount >= 0) {
+    if ((m_state == SessionState::Ready || m_state == SessionState::Authorized
+         || m_state == SessionState::BlockedPIN || m_state == SessionState::BlockedPUK)
+        && m_appStatus.pinRetryCount >= 0) {
         status.keycardStatus = new ApplicationStatus();
         status.keycardStatus->remainingAttemptsPIN = m_appStatus.pinRetryCount;
         status.keycardStatus->remainingAttemptsPUK = m_appStatus.pukRetryCount;
@@ -327,18 +335,32 @@ bool SessionManager::authorize(const QString& pin)
 
     auto cmd = std::make_unique<Keycard::VerifyPINCommand>(pin);
     Keycard::CommandResult result = m_commMgr->executeCommandSync(std::move(cmd), 30000);
+    bool authorized = result.success;
 
-    if (result.success) {
-        // Update status from result
-        QVariantMap data = result.data.toMap();
-        m_appStatus.pinRetryCount = data["remainingAttempts"].toInt();
-
-        setState(SessionState::Authorized);
-        return true;
-    } else {
-        setError(result.error);
-        return false;
+    auto statusCmd = std::make_unique<Keycard::GetStatusCommand>();
+    Keycard::CommandResult statusResult = m_commMgr->executeCommandSync(std::move(statusCmd), 30000);
+    if (statusResult.success) {
+        QVariantMap statusData = statusResult.data.toMap();
+        m_appStatus.pinRetryCount = statusData["pinRetryCount"].toInt();
+        m_appStatus.pukRetryCount = statusData["pukRetryCount"].toInt();
     }
+
+    // Determine state based on updated status
+    if (m_appStatus.pinRetryCount == 0) {
+        setState(SessionState::BlockedPIN);
+    } else if (m_appStatus.pukRetryCount == 0) {
+        setState(SessionState::BlockedPUK);
+    } else if (authorized) {
+        setState(SessionState::Authorized);
+    } else {
+        setState(SessionState::Ready);
+    }
+
+    if (!authorized) {
+        setError(result.error);
+    }
+
+    return authorized;
 }
 
 bool SessionManager::changePIN(const QString& newPIN)
