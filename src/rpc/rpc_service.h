@@ -66,6 +66,17 @@ private:
      */
     QJsonObject statusToJson(const SessionManager::Status& status);
 
+    /**
+     * @brief Validate infrastructure and configure pairing storage
+     * @return empty QJsonObject on success, or error response on failure
+     */
+    QJsonObject validateAndConfigureStorage(quint64 id, const QString& storagePath);
+
+    /**
+     * @brief Convert LoginKeys to JSON-RPC result
+     */
+    QJsonObject loginKeysToJson(const SessionManager::LoginKeys& keys);
+
     // RPC method handlers
     QJsonObject handleStart(quint64 id, const QJsonObject& params);
     QJsonObject handleStop(quint64 id, const QJsonObject& params);
@@ -82,6 +93,7 @@ private:
     QJsonObject handleStoreMetadata(quint64 id, const QJsonObject& params);
     QJsonObject handleExportLoginKeys(quint64 id, const QJsonObject& params);
     QJsonObject handleExportRecoverKeys(quint64 id, const QJsonObject& params);
+    QJsonObject handleLogin(quint64 id, const QJsonObject& params);
 
     std::unique_ptr<SessionManager> m_sessionManager;
     std::shared_ptr<Keycard::ICommunicationManager> m_commMgr;

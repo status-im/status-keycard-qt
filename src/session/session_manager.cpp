@@ -125,6 +125,13 @@ void SessionManager::stop()
 
     qDebug() << "StatusKeycardQt::SessionManager: Stopping...";
 
+    // Cancel any pending login wait
+    {
+        QMutexLocker locker(&m_cardReadyMutex);
+        m_compositeMethodCallCancelled = true;
+        m_cardReadyCondition.wakeAll();
+    }
+
     // Stop card detection
     if (m_commMgr) {
         m_commMgr->stopDetection();
@@ -143,6 +150,12 @@ void SessionManager::setState(SessionState newState)
 
     SessionState oldState = m_state;
     m_state = newState;
+
+    // Wake any thread waiting for card readiness (e.g., login())
+    if (newState != SessionState::WaitingForCard) {
+        QMutexLocker locker(&m_cardReadyMutex);
+        m_cardReadyCondition.wakeAll();
+    }
 
     // Emit Qt signal - c_api.cpp will forward to SignalManager
     emit stateChanged(newState, oldState);
@@ -204,6 +217,36 @@ void SessionManager::setError(const QString& error)
     m_lastError = error;
 }
 
+bool SessionManager::ensureKeycardCommunication()
+{
+    if (!m_commMgr) {
+        setError("No communication manager available");
+        return false;
+    }
+    return true;
+}
+
+bool SessionManager::ensureStarted()
+{
+    if (!m_started) {
+        setError("SessionManager not started");
+        return false;
+    }
+    return ensureKeycardCommunication();
+}
+
+bool SessionManager::ensureAuthorized()
+{
+    if (!ensureStarted()) {
+        return false;
+    }
+    if (m_state != SessionState::Authorized) {
+        setError("Not authorized");
+        return false;
+    }
+    return true;
+}
+
 QString SessionManager::currentStateString() const
 {
     return sessionStateToString(m_state);
@@ -250,13 +293,7 @@ bool SessionManager::initialize(const QString& pin, const QString& puk, const QS
     qDebug() << "StatusKeycardQt::SessionManager::initialize()";
     QMutexLocker locker(&m_operationMutex);
 
-    if (!m_started) {
-        setError("SessionManager not started");
-        return false;
-    }
-
-    if (!m_commMgr) {
-        setError("No communication manager available");
+    if (!ensureStarted()) {
         return false;
     }
 
@@ -279,13 +316,7 @@ bool SessionManager::authorize(const QString& pin)
 {
     qDebug() << "StatusKeycardQt::SessionManager::authorize() - Thread:" << QThread::currentThread();
 
-    if (!m_started) {
-        setError("SessionManager not started");
-        return false;
-    }
-
-    if (!m_commMgr) {
-        setError("No communication manager available");
+    if (!ensureStarted()) {
         return false;
     }
 
@@ -314,18 +345,7 @@ bool SessionManager::changePIN(const QString& newPIN)
 {
     QMutexLocker locker(&m_operationMutex);
 
-    if (!m_started) {
-        setError("SessionManager not started");
-        return false;
-    }
-
-    if (!m_commMgr) {
-        setError("No communication manager available");
-        return false;
-    }
-
-    if (m_state != SessionState::Authorized) {
-        setError("Not authorized");
+    if (!ensureAuthorized()) {
         return false;
     }
 
@@ -345,18 +365,7 @@ bool SessionManager::changePUK(const QString& newPUK)
 {
     QMutexLocker locker(&m_operationMutex);
 
-    if (!m_started) {
-        setError("SessionManager not started");
-        return false;
-    }
-
-    if (!m_commMgr) {
-        setError("No communication manager available");
-        return false;
-    }
-
-    if (m_state != SessionState::Authorized) {
-        setError("Not authorized");
+    if (!ensureAuthorized()) {
         return false;
     }
 
@@ -376,13 +385,7 @@ bool SessionManager::unblockPIN(const QString& puk, const QString& newPIN)
 {
     QMutexLocker locker(&m_operationMutex);
 
-    if (!m_started) {
-        setError("SessionManager not started");
-        return false;
-    }
-
-    if (!m_commMgr) {
-        setError("No communication manager available");
+    if (!ensureStarted()) {
         return false;
     }
 
@@ -409,13 +412,7 @@ QVector<int> SessionManager::generateMnemonic(int length)
 {
     QMutexLocker locker(&m_operationMutex);
 
-    if (!m_started) {
-        setError("SessionManager not started");
-        return QVector<int>();
-    }
-
-    if (!m_commMgr) {
-        setError("No communication manager available");
+    if (!ensureStarted()) {
         return QVector<int>();
     }
 
@@ -445,13 +442,7 @@ QString SessionManager::loadMnemonic(const QString& mnemonic, const QString& pas
 {
     QMutexLocker locker(&m_operationMutex);
 
-    if (!m_started) {
-        setError("SessionManager not started");
-        return QString();
-    }
-
-    if (!m_commMgr) {
-        setError("No communication manager available");
+    if (!ensureStarted()) {
         return QString();
     }
 
@@ -488,11 +479,6 @@ QString SessionManager::loadMnemonic(const QString& mnemonic, const QString& pas
     // Load seed onto keycard
     qDebug() << "StatusKeycardQt::SessionManager: Loading seed onto keycard (" << seed.size() << " bytes)";
 
-    if (!m_commMgr) {
-        setError("No communication manager available");
-        return QString();
-    }
-
     auto cmd = std::make_unique<Keycard::LoadSeedCommand>(seed);
     Keycard::CommandResult result = m_commMgr->executeCommandSync(std::move(cmd), 60000);
 
@@ -513,13 +499,7 @@ bool SessionManager::factoryReset()
 {
     QMutexLocker locker(&m_operationMutex);
 
-    if (!m_started) {
-        setError("SessionManager not started");
-        return false;
-    }
-
-    if (!m_commMgr) {
-        setError("No communication manager available");
+    if (!ensureStarted()) {
         return false;
     }
 
@@ -681,8 +661,7 @@ static SessionManager::KeyPair parseExportedKey(const QByteArray& data) {
 // (batch mode prevents channel stop/start cycles)
 QByteArray SessionManager::exportKeyInternal(bool derive, bool makeCurrent, const QString& path, uint8_t exportType)
 {
-    if (!m_commMgr) {
-        setError("No communication manager available");
+    if (!ensureKeycardCommunication()) {
         return QByteArray();
     }
 
@@ -701,8 +680,7 @@ QByteArray SessionManager::exportKeyInternal(bool derive, bool makeCurrent, cons
 
 QByteArray SessionManager::exportKeyExtendedInternal(bool derive, bool makeCurrent, const QString& path)
 {
-    if (!m_commMgr) {
-        setError("No communication manager available");
+    if (!ensureKeycardCommunication()) {
         return QByteArray();
     }
 
@@ -728,13 +706,7 @@ SessionManager::LoginKeys SessionManager::exportLoginKeys(bool isMainCommand)
 
     LoginKeys keys;
 
-    if (m_state != SessionState::Authorized) {
-        setError("Not authorized");
-        return keys;
-    }
-
-    if (!m_commMgr) {
-        setError("No communication manager available");
+    if (!ensureAuthorized()) {
         return keys;
     }
 
@@ -778,6 +750,75 @@ SessionManager::LoginKeys SessionManager::exportLoginKeys(bool isMainCommand)
     return keys;
 }
 
+SessionManager::LoginKeys SessionManager::login(const QString& keyUid, const QString& pin, bool logEnabled, const QString& logFilePath)
+{
+    qDebug() << "StatusKeycardQt::SessionManager::login()";
+
+    // Stop any existing session to release the PCSC card handle
+    stop();
+
+    // Clear any previous error and cancel flag (after stop, which sets cancelled=true)
+    m_lastError.clear();
+    {
+        QMutexLocker locker(&m_cardReadyMutex);
+        m_compositeMethodCallCancelled = false;
+    }
+
+    if (!ensureKeycardCommunication()) {
+        return LoginKeys();
+    }
+
+    // Enable batch mode BEFORE starting detection so the NFC session stays alive
+    m_commMgr->startBatchOperations();
+    auto batchGuard = [this](void*) { m_commMgr->endBatchOperations(); };
+    std::unique_ptr<void, decltype(batchGuard)> guard(reinterpret_cast<void*>(1), batchGuard);
+
+    // Step 1: Start card detection
+    if (!start(logEnabled, logFilePath)) {
+        setError(QString("Failed to start: %1").arg(m_lastError));
+        return LoginKeys();
+    }
+
+    // Step 2: Wait for card to be ready (event-driven, no polling)
+    {
+        QMutexLocker locker(&m_cardReadyMutex);
+        while (m_state == SessionState::WaitingForCard && !m_compositeMethodCallCancelled) {
+            m_cardReadyCondition.wait(&m_cardReadyMutex);
+        }
+    }
+
+    if (m_compositeMethodCallCancelled) {
+        setError("Login cancelled");
+        return LoginKeys();
+    }
+
+    if (m_state != SessionState::Ready) {
+        setError(QString("Card not ready (state: %1)").arg(currentStateString()));
+        return LoginKeys();
+    }
+
+    auto status = getStatus();
+    if (!status.keycardInfo || !status.keycardInfo) {
+        setError("Keycard info not found");
+        return LoginKeys();
+    }
+
+    if (status.keycardInfo->keyUID != keyUid) {
+        setError("Keycard UID does not match the keyUid being tried to login with");
+        return LoginKeys();
+    }
+
+    // Step 3: Authorize with PIN (batch is already active)
+    QMutexLocker locker(&m_operationMutex);
+
+    if (!authorize(pin)) {
+        return LoginKeys();
+    }
+
+    // Step 4: Export login keys (not main command — batch is already open)
+    return exportLoginKeys(false);
+}
+
 SessionManager::RecoverKeys SessionManager::exportRecoverKeys()
 {
     // Serialize card operations to prevent concurrent APDU corruption
@@ -788,13 +829,7 @@ SessionManager::RecoverKeys SessionManager::exportRecoverKeys()
 
     RecoverKeys keys;
 
-    if (m_state != SessionState::Authorized) {
-        setError("Not authorized");
-        return keys;
-    }
-
-    if (!m_commMgr) {
-        setError("No communication manager available");
+    if (!ensureAuthorized()) {
         return keys;
     }
 
@@ -865,8 +900,7 @@ SessionManager::Metadata SessionManager::getMetadata(bool isMainCommand)
 
     Metadata metadata;
 
-    if (!m_commMgr) {
-        setError("No communication manager available");
+    if (!ensureKeycardCommunication()) {
         return metadata;
     }
 
@@ -974,13 +1008,7 @@ bool SessionManager::storeMetadata(const QString& name, const QStringList& paths
     qDebug() << "StatusKeycardQt::SessionManager: Storing metadata - name:" << name << "paths:" << paths.size();
     QMutexLocker locker(&m_operationMutex);
 
-    if (m_state != SessionState::Authorized) {
-        setError("Not authorized");
-        return false;
-    }
-
-    if (!m_commMgr) {
-        setError("No communication manager available");
+    if (!ensureAuthorized()) {
         return false;
     }
 

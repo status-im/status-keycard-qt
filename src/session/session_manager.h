@@ -6,13 +6,14 @@
 #include <QObject>
 #include <QTimer>
 #include <QMutex>
+#include <QWaitCondition>
 #include <memory>
 
 namespace StatusKeycard {
 
 /**
  * @brief Manages keycard session lifecycle
- * 
+ *
  * Responsibilities:
  * - Card/reader detection and monitoring
  * - Automatic connection management
@@ -25,15 +26,15 @@ class SessionManager : public QObject {
 public:
     explicit SessionManager(QObject* parent = nullptr);
     ~SessionManager();
-    
+
     /**
      * @brief Set CommunicationManager
      * @param commMgr CommunicationManager instance (must be started)
-     * 
+     *
      * Must be called before start().
      * The CommunicationManager should be created and started by the caller
      * (e.g., RPC service) with the channel and dependencies.
-     * 
+     *
      * Accepts ICommunicationManager interface for testability.
      */
     void setCommunicationManager(std::shared_ptr<Keycard::ICommunicationManager> commMgr);
@@ -47,26 +48,26 @@ public:
     // Current state
     SessionState currentState() const { return m_state; }
     QString currentStateString() const;
-    
+
     // Card operations (require Authorized state for most)
     bool initialize(const QString& pin, const QString& puk, const QString& pairingPassword);
     bool authorize(const QString& pin);
     bool changePIN(const QString& newPIN);
     bool changePUK(const QString& newPUK);
     bool unblockPIN(const QString& puk, const QString& newPIN);
-    
+
     // Key operations
     QVector<int> generateMnemonic(int length);
     QString loadMnemonic(const QString& mnemonic, const QString& passphrase);
     bool factoryReset();
-    
+
     // Forward-declare nested types for method signatures
     struct Metadata;
-    
+
     // Metadata operations
     Metadata getMetadata(bool isMainCommand = true);
     bool storeMetadata(const QString& name, const QStringList& paths);
-    
+
     // Key export
     struct KeyPair {
         QString address;
@@ -74,13 +75,14 @@ public:
         QString privateKey;  // Optional
         QString chainCode;   // Optional (for extended keys)
     };
-    
+
     struct LoginKeys {
         KeyPair whisperPrivateKey;
         KeyPair encryptionPrivateKey;
     };
     LoginKeys exportLoginKeys(bool isMainCommand = true);
-    
+    LoginKeys login(const QString& keyUid, const QString& pin, bool logEnabled = false, const QString& logFilePath = QString());
+
     struct RecoverKeys {
         LoginKeys loginKeys;
         KeyPair eip1581;
@@ -89,19 +91,19 @@ public:
         KeyPair masterKey;
     };
     RecoverKeys exportRecoverKeys();
-    
+
     // Status structures (matching status-keycard-go exactly)
     struct Wallet {
         QString path;
         QString address;
         QString publicKey;
     };
-    
+
     struct Metadata {
         QString name;
         QVector<Wallet> wallets;
     };
-    
+
     struct ApplicationInfoV2 {
         bool installed;
         bool initialized;
@@ -110,20 +112,20 @@ public:
         int availableSlots;
         QString keyUID;
     };
-    
+
     struct ApplicationStatus {
         int remainingAttemptsPIN;
         int remainingAttemptsPUK;
         bool keyInitialized;
         QString path;
     };
-    
+
     struct Status {
         QString state;  // State string (e.g., "ready", "authorized")
         ApplicationInfoV2* keycardInfo;  // Can be null
         ApplicationStatus* keycardStatus;  // Can be null
         Metadata* metadata;  // Can be null
-        
+
         Status() : keycardInfo(nullptr), keycardStatus(nullptr), metadata(nullptr) {}
         ~Status() {
             delete keycardInfo;
@@ -132,7 +134,7 @@ public:
         }
     };
     Status getStatus() const;
-    
+
     // Error handling
     QString lastError() const { return m_lastError; }
 
@@ -147,7 +149,11 @@ public slots:
 private:
     void setState(SessionState newState);
     void setError(const QString& error);
-    
+
+    bool ensureKeycardCommunication();
+    bool ensureStarted();
+    bool ensureAuthorized();
+
     // Helper for exporting keys
     QByteArray exportKeyInternal(bool derive, bool makeCurrent, const QString& path, uint8_t exportType = 0x00);
     QByteArray exportKeyExtendedInternal(bool derive, bool makeCurrent, const QString& path);
@@ -156,23 +162,28 @@ private:
     SessionState m_state;
     bool m_started;
     QString m_lastError;
-    
+
     // Keycard components (uses interface for testability)
     std::shared_ptr<Keycard::ICommunicationManager> m_commMgr;
-    
+
     // Cached card state
     Keycard::ApplicationInfo m_appInfo;
     Keycard::ApplicationStatus m_appStatus;  // Cached status to avoid redundant GET_STATUS calls
     Metadata m_metadata;
-    
+
     // Monitoring
     QTimer* m_stateCheckTimer;
     QString m_currentCardUID;
     bool m_authorized;
-    
+
     // Thread safety - protects all card operations
     // MUST be recursive to allow exportRecoverKeys() to call exportLoginKeys()
     mutable QRecursiveMutex m_operationMutex;
+
+    // Event-based wait for login() — RPC thread sleeps until card state changes
+    QWaitCondition m_cardReadyCondition;
+    QMutex m_cardReadyMutex;
+    bool m_compositeMethodCallCancelled = false;
 };
 
 } // namespace StatusKeycard
