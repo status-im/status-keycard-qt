@@ -100,6 +100,8 @@ QString RpcService::processRequest(const QString& requestJson) {
         response = handleExportRecoverKeys(id, params);
     } else if (method == "keycard.Login") {
         response = handleLogin(id, params);
+    } else if (method == "keycard.Recover") {
+        response = handleRecover(id, params);
     } else {
         response = createErrorResponse(id, -32601, QString("Method not found: %1").arg(method));
     }
@@ -235,6 +237,35 @@ QJsonObject RpcService::loginKeysToJson(const SessionManager::LoginKeys& keys) {
 
     QJsonObject result;
     result["keys"] = keysObject;
+
+    return result;
+}
+
+QJsonObject RpcService::recoverKeysToJson(const SessionManager::RecoverKeys& keys) {
+    // Helper to convert KeyPair to JSON
+    auto keyPairToJson = [](const SessionManager::KeyPair& kp) {
+        QJsonObject obj;
+        obj["address"] = kp.address;
+        obj["publicKey"] = kp.publicKey;
+        if (!kp.privateKey.isEmpty()) {
+            obj["privateKey"] = kp.privateKey;
+        }
+        if (!kp.chainCode.isEmpty()) {
+            obj["chainCode"] = kp.chainCode;
+        }
+        return obj;
+    };
+
+    QJsonObject keysObj;
+    keysObj["whisperPrivateKey"] = keyPairToJson(keys.loginKeys.whisperPrivateKey);
+    keysObj["encryptionPrivateKey"] = keyPairToJson(keys.loginKeys.encryptionPrivateKey);
+    keysObj["eip1581"] = keyPairToJson(keys.eip1581);
+    keysObj["walletRootKey"] = keyPairToJson(keys.walletRootKey);
+    keysObj["walletKey"] = keyPairToJson(keys.walletKey);
+    keysObj["masterKey"] = keyPairToJson(keys.masterKey);
+
+    QJsonObject result;
+    result["keys"] = keysObj;
 
     return result;
 }
@@ -472,33 +503,7 @@ QJsonObject RpcService::handleExportRecoverKeys(quint64 id, const QJsonObject& p
         return createErrorResponse(id, -32000, m_sessionManager->lastError());
     }
 
-    // Helper to convert KeyPair to JSON
-    auto keyPairToJson = [](const SessionManager::KeyPair& kp) {
-        QJsonObject obj;
-        obj["address"] = kp.address;
-        obj["publicKey"] = kp.publicKey;
-        if (!kp.privateKey.isEmpty()) {
-            obj["privateKey"] = kp.privateKey;
-        }
-        if (!kp.chainCode.isEmpty()) {
-            obj["chainCode"] = kp.chainCode;
-        }
-        return obj;
-    };
-
-    // Build response matching status-keycard-go format
-    QJsonObject keysObj;
-    keysObj["whisperPrivateKey"] = keyPairToJson(keys.loginKeys.whisperPrivateKey);
-    keysObj["encryptionPrivateKey"] = keyPairToJson(keys.loginKeys.encryptionPrivateKey);
-    keysObj["eip1581"] = keyPairToJson(keys.eip1581);
-    keysObj["walletRootKey"] = keyPairToJson(keys.walletRootKey);
-    keysObj["walletKey"] = keyPairToJson(keys.walletKey);
-    keysObj["masterKey"] = keyPairToJson(keys.masterKey);
-
-    QJsonObject result;
-    result["keys"] = keysObj;
-
-    return createSuccessResponse(id, result);
+    return createSuccessResponse(id, recoverKeysToJson(keys));
 }
 
 // ============================================================================
@@ -536,6 +541,44 @@ QJsonObject RpcService::handleLogin(quint64 id, const QJsonObject& params) {
     }
 
     return createSuccessResponse(id, loginKeysToJson(keys));
+}
+
+QJsonObject RpcService::handleRecover(quint64 id, const QJsonObject& params) {
+    QString storagePath = params["storageFilePath"].toString();
+    QString pin = params["pin"].toString();
+    QString puk = params["puk"].toString();
+    QString pairingPassword = params["pairingPassword"].toString();
+    QString mnemonic = params["mnemonic"].toString();
+    bool logEnabled = params["logEnabled"].toBool(false);
+    QString logFilePath = params["logFilePath"].toString();
+
+    if (storagePath.isEmpty()) {
+        return createErrorResponse(id, -32602, "Missing required parameter: storageFilePath");
+    }
+
+    if (pin.length() != 6) {
+        return createErrorResponse(id, -32602, "PIN must be 6 digits");
+    }
+
+    if (puk.length() != 12) {
+        return createErrorResponse(id, -32602, "PUK must be 12 digits");
+    }
+
+    if (mnemonic.isEmpty()) {
+        return createErrorResponse(id, -32602, "mnemonic is required");
+    }
+
+    QJsonObject validationError = validateAndConfigureStorage(id, storagePath);
+    if (!validationError.isEmpty()) {
+        return validationError;
+    }
+
+    SessionManager::RecoverKeys keys = m_sessionManager->recover(pin, puk, pairingPassword, mnemonic, logEnabled, logFilePath);
+    if (!m_sessionManager->lastError().isEmpty()) {
+        return createErrorResponse(id, -32000, m_sessionManager->lastError());
+    }
+
+    return createSuccessResponse(id, recoverKeysToJson(keys));
 }
 
 } // namespace StatusKeycard

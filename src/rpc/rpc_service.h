@@ -76,6 +76,10 @@ private:
      * @brief Convert LoginKeys to JSON-RPC result
      */
     QJsonObject loginKeysToJson(const SessionManager::LoginKeys& keys);
+    /**
+     * @brief Convert RecoverKeys to JSON-RPC result
+     */
+    QJsonObject recoverKeysToJson(const SessionManager::RecoverKeys& keys);
 
     // RPC method handlers
     QJsonObject handleStart(quint64 id, const QJsonObject& params);
@@ -94,6 +98,7 @@ private:
     QJsonObject handleExportLoginKeys(quint64 id, const QJsonObject& params);
     QJsonObject handleExportRecoverKeys(quint64 id, const QJsonObject& params);
     QJsonObject handleLogin(quint64 id, const QJsonObject& params);
+    QJsonObject handleRecover(quint64 id, const QJsonObject& params);
 
     std::unique_ptr<SessionManager> m_sessionManager;
     std::shared_ptr<Keycard::ICommunicationManager> m_commMgr;
