@@ -227,6 +227,19 @@ void ResetAPIWithContext(StatusKeycardContext ctx) {
         impl->rpcService->sessionManager()->stop();
     }
 
+    // The following block handles the case where the keycard was factory resetted or recovered during onboarding,
+    // and the keycard was not removed from the reader, without this block, this lib will be using old cached state.
+#if not defined(Q_OS_ANDROID) && not defined(Q_OS_IOS)
+    // Restart card detection so the CommunicationManager runs the full
+    // initialization sequence (SELECT force=true + pairing + secure channel
+    // + get status). This refreshes all cached state (appInfo, appStatus)
+    // so subsequent operations see up-to-date card data.
+    if (impl->commMgr) {
+        impl->commMgr->stopDetection();
+        impl->commMgr->startDetection();
+    }
+#endif
+
     // Reset RPC service
     impl->rpcService.reset();
     impl->rpcService = std::make_unique<StatusKeycard::RpcService>();

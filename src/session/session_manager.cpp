@@ -134,6 +134,8 @@ void SessionManager::stop()
 
     // Stop card detection
     if (m_commMgr) {
+        // Disconnect from CommunicationManager signals so SessionManager doesn't react to card events anymore
+        QObject::disconnect(m_commMgr.get(), nullptr, this, nullptr);
         m_commMgr->stopDetection();
     }
 
