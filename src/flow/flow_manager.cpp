@@ -436,6 +436,9 @@ void FlowManager::runFlowAsync()
                 flow->resetRestartFlag();
             }
 
+            // Keep NFC session alive while flow execution is active.
+            flow->beginBatchLifecycleIfNeeded();
+
             // Execute flow
             try {
                 result = flow->execute();
@@ -500,6 +503,8 @@ void FlowManager::cleanupFlow()
     m_currentCardUid.clear();
 
     if (m_currentFlow) {
+        m_currentFlow->endBatchLifecycleIfNeeded();
+
         // Disconnect all signals to prevent callbacks on deleted object
         m_currentFlow->disconnect();
         m_currentFlow->deleteLater();

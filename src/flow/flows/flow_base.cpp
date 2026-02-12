@@ -24,6 +24,7 @@ FlowBase::FlowBase(FlowManager* manager, FlowType type, const QJsonObject& param
     , m_paused(false)
     , m_cancelled(false)
     , m_shouldRestart(false)
+    , m_batchOperationsActive(false)
 {
 }
 
@@ -54,6 +55,46 @@ void FlowBase::cancel()
     QMutexLocker locker(&m_resumeMutex);
     m_cancelled = true;
     m_resumeCondition.wakeAll();
+}
+
+void FlowBase::beginBatchLifecycleIfNeeded()
+{
+    auto commMgr = communicationManager();
+    if (!commMgr) {
+        return;
+    }
+
+    QMutexLocker locker(&m_batchMutex);
+    if (m_batchOperationsActive) {
+        return;
+    }
+
+    commMgr->startBatchOperations();
+    m_batchOperationsActive = true;
+}
+
+void FlowBase::endBatchLifecycleIfNeeded()
+{
+    bool shouldEnd = false;
+    {
+        QMutexLocker locker(&m_batchMutex);
+        if (!m_batchOperationsActive) {
+            return;
+        }
+        m_batchOperationsActive = false;
+        shouldEnd = true;
+    }
+
+    if (!shouldEnd) {
+        return;
+    }
+
+    auto commMgr = communicationManager();
+    if (!commMgr) {
+        return;
+    }
+
+    commMgr->endBatchOperations();
 }
 
 // ============================================================================
@@ -88,6 +129,8 @@ void FlowBase::pauseAndWait(const QString& action, const QString& error)
 void FlowBase::pauseAndWaitWithStatus(const QString& action, const QString& error,
                                      const QJsonObject& status)
 {
+    // Pause user interaction should release current batch and NFC hold.
+    endBatchLifecycleIfNeeded();
 
     // Build event with error and status
     QJsonObject event = status;
@@ -115,6 +158,11 @@ void FlowBase::pauseAndWaitWithStatus(const QString& action, const QString& erro
 
     while (m_paused && !m_cancelled) {
         m_resumeCondition.wait(&m_resumeMutex);
+    }
+
+    // Resume flow execution in batch mode again, unless cancellation was requested.
+    if (!m_cancelled) {
+        beginBatchLifecycleIfNeeded();
     }
 }
 
