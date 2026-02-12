@@ -79,6 +79,20 @@ public:
      * @brief Get flow type
      */
     FlowType flowType() const { return m_flowType; }
+
+    /**
+     * @brief Start batch operations for active flow execution.
+     *
+     * Idempotent: starts batch operations only once until explicitly ended.
+     */
+    void beginBatchLifecycleIfNeeded();
+
+    /**
+     * @brief End batch operations for active flow execution.
+     *
+     * Idempotent: no-op when batch operations are not active.
+     */
+    void endBatchLifecycleIfNeeded();
     
 signals:
     /**
@@ -294,6 +308,10 @@ private:
     bool m_paused;
     bool m_cancelled;
     bool m_shouldRestart;
+
+    // Flow-level batch lifecycle state
+    QMutex m_batchMutex;
+    bool m_batchOperationsActive;
 };
 
 } // namespace StatusKeycard
