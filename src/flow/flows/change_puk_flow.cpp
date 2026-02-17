@@ -47,7 +47,7 @@ QJsonObject ChangePUKFlow::execute()
     }
 
     auto cmd = std::make_unique<Keycard::ChangePUKCommand>(newPUK);
-    Keycard::CommandResult result = commMgr->executeCommandSync(std::move(cmd), 30000);
+    Keycard::CommandResult result = commMgr->executeCommandSync(std::move(cmd));
 
     if (!result.success) {
         QJsonObject error;

@@ -28,6 +28,7 @@ enum class SessionState {
     FactoryResetting,        // "factory-resetting"
     InternalError,            // "internal-error"
     NoAvailablePairingSlots,  // "no-available-pairing-slots"
+    Cancelled,                // "cancelled"
 };
 
 inline QString sessionStateToString(SessionState state) {
@@ -49,6 +50,7 @@ inline QString sessionStateToString(SessionState state) {
         case SessionState::FactoryResetting:      return "factory-resetting";
         case SessionState::InternalError:         return "internal-error";
         case SessionState::NoAvailablePairingSlots: return "no-available-pairing-slots";
+        case SessionState::Cancelled:               return "cancelled";
     }
     return "unknown-reader-state";
 }

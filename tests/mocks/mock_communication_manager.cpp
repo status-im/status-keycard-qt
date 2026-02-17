@@ -124,9 +124,8 @@ void MockCommunicationManager::stopDetection()
 }
 
 Keycard::CommandResult MockCommunicationManager::executeCommandSync(
-    std::unique_ptr<Keycard::CardCommand> cmd, int timeoutMs)
+    std::unique_ptr<Keycard::CardCommand> cmd)
 {
-    Q_UNUSED(timeoutMs);
 
     if (!cmd) {
         qWarning() << "[MockCommunicationManager] executeCommandSync called with null command";

@@ -54,12 +54,12 @@ QJsonObject GetAppInfoFlow::execute()
         }
 
         auto cmd = std::make_unique<Keycard::FactoryResetCommand>();
-        Keycard::CommandResult result = commMgr->executeCommandSync(std::move(cmd), 60000);
+        Keycard::CommandResult result = commMgr->executeCommandSync(std::move(cmd));
 
         if (!result.success) {
             qWarning() << "GetAppInfoFlow: Factory reset failed:" << result.error;
             QJsonObject error;
-            error[FlowParams::ERROR_KEY] = "factory-reset-failed";
+            error[FlowParams::ERROR_KEY] = result.error;
             return error;
         }
 

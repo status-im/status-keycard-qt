@@ -81,7 +81,7 @@ QJsonObject ExportPublicFlow::execute()
     for (const QString& path : paths) {
         auto cmd = std::make_unique<Keycard::ExportKeyCommand>(true, false, path, 
             Keycard::APDU::P2ExportKeyPublicOnly);
-        Keycard::CommandResult result = commMgr->executeCommandSync(std::move(cmd), 30000);
+        Keycard::CommandResult result = commMgr->executeCommandSync(std::move(cmd));
         
         if (!result.success) {
             qCritical() << "ExportPublicFlow: Export failed for path" << path << ":" << result.error;

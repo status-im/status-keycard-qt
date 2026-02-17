@@ -98,7 +98,7 @@ public:
     
     bool startDetection() override;
     void stopDetection() override;
-    Keycard::CommandResult executeCommandSync(std::unique_ptr<Keycard::CardCommand> cmd, int timeoutMs = -1) override;
+    Keycard::CommandResult executeCommandSync(std::unique_ptr<Keycard::CardCommand> cmd) override;
     Keycard::ApplicationInfo applicationInfo() const override;
     Keycard::ApplicationStatus applicationStatus() const override;
     void startBatchOperations() override;

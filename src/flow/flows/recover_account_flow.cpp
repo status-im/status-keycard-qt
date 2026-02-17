@@ -148,10 +148,13 @@ QJsonObject RecoverAccountFlow::exportKey(const QString& path, bool includePriva
     }
 
     auto cmd = std::make_unique<Keycard::ExportKeyCommand>(true, makeCurrent, path, exportType);
-    Keycard::CommandResult result = commMgr->executeCommandSync(std::move(cmd), 30000);
+    Keycard::CommandResult result = commMgr->executeCommandSync(std::move(cmd));
 
     if (!result.success) {
         qCritical() << "RecoverAccountFlow: Export key failed:" << result.error;
+        if (result.reason == Keycard::CommandResultType::Cancelled) {
+            emit flowError(result.error);
+        }
         return QJsonObject();
     }
 

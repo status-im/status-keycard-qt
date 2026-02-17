@@ -41,11 +41,11 @@ QJsonObject ChangePINFlow::execute()
     }
 
     auto cmd = std::make_unique<Keycard::ChangePINCommand>(newPIN);
-    Keycard::CommandResult result = commMgr->executeCommandSync(std::move(cmd), 30000);
+    Keycard::CommandResult result = commMgr->executeCommandSync(std::move(cmd));
 
     if (!result.success) {
         QJsonObject error;
-        error[FlowParams::ERROR_KEY] = "change-failed";
+        error[FlowParams::ERROR_KEY] = result.error;
         return error;
     }
 
