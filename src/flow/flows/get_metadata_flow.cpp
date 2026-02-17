@@ -30,10 +30,16 @@ QJsonObject GetMetadataFlow::execute()
     }
 
     auto cmd = std::make_unique<Keycard::GetMetadataCommand>();
-    Keycard::CommandResult cmdResult = commMgr->executeCommandSync(std::move(cmd), 30000);
+    Keycard::CommandResult cmdResult = commMgr->executeCommandSync(std::move(cmd));
 
     QByteArray metadataData;
     if (!cmdResult.success) {
+        if (cmdResult.reason == Keycard::CommandResultType::Cancelled) {
+            emit flowError(cmdResult.error);
+        }
+        QJsonObject error;
+        error[FlowParams::ERROR_KEY] = cmdResult.error;
+        return error;
         qWarning() << "GetMetadataFlow: Failed to get metadata:" << cmdResult.error;
         // Don't return error - just empty metadata
     } else {
@@ -178,7 +184,16 @@ QJsonObject GetMetadataFlow::execute()
             // Phase 6: CommunicationManager is always available (already checked at start)
             auto cmd = std::make_unique<Keycard::ExportKeyCommand>(true, false, "m",
                 Keycard::APDU::P2ExportKeyPublicOnly);
-            Keycard::CommandResult result = commMgr->executeCommandSync(std::move(cmd), 30000);
+            Keycard::CommandResult result = commMgr->executeCommandSync(std::move(cmd));
+
+            if (!result.success) {
+                if (result.reason == Keycard::CommandResultType::Cancelled) {
+                    emit flowError(result.error);
+                }
+                QJsonObject error;
+                error[FlowParams::ERROR_KEY] = result.error;
+                return error;
+            }
 
             QByteArray masterKeyData;
             if (result.success) {
@@ -248,7 +263,16 @@ QJsonObject GetMetadataFlow::execute()
             // Phase 6: CommunicationManager is always available (already checked at start)
             auto cmd = std::make_unique<Keycard::ExportKeyCommand>(true, false, walletPath,
                 Keycard::APDU::P2ExportKeyPublicOnly);
-            Keycard::CommandResult result = commMgr->executeCommandSync(std::move(cmd), 30000);
+            Keycard::CommandResult result = commMgr->executeCommandSync(std::move(cmd));
+
+            if (!result.success) {
+                if (result.reason == Keycard::CommandResultType::Cancelled) {
+                    emit flowError(result.error);
+                }
+                QJsonObject error;
+                error[FlowParams::ERROR_KEY] = result.error;
+                return error;
+            }
 
             QByteArray keyData;
             if (result.success) {

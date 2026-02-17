@@ -189,7 +189,7 @@ bool FlowBase::selectKeycard()
     }
 
     auto cmd = std::make_unique<Keycard::SelectCommand>(false);
-    Keycard::CommandResult result = commMgr->executeCommandSync(std::move(cmd), 30000);
+    Keycard::CommandResult result = commMgr->executeCommandSync(std::move(cmd));
 
     if (!result.success) {
         qCritical() << "FlowBase: SELECT failed:" << result.error;
@@ -251,11 +251,13 @@ FlowResult FlowBase::initializeKeycard()
     }
 
     auto cmd = std::make_unique<Keycard::InitCommand>(pin, puk, pairingPassword);
-    Keycard::CommandResult cmdResult = commMgr->executeCommandSync(std::move(cmd), 60000);
+    Keycard::CommandResult cmdResult = commMgr->executeCommandSync(std::move(cmd));
 
     if (!cmdResult.success) {
         qWarning() << "FlowBase: Card initialization failed:" << cmdResult.error;
-        result[FlowParams::ERROR_KEY] = "init-failed";
+        if (cmdResult.reason == Keycard::CommandResultType::Cancelled) {
+            emit flowError(cmdResult.error);
+        }
         return FlowResult{false, result};
     }
 
@@ -296,9 +298,14 @@ bool FlowBase::unblockPIN()
     }
 
     auto cmd = std::make_unique<Keycard::UnblockPINCommand>(puk, newPIN);
-    Keycard::CommandResult result = commMgr->executeCommandSync(std::move(cmd), 30000);
+    Keycard::CommandResult result = commMgr->executeCommandSync(std::move(cmd));
 
     if (!result.success) {
+
+        if (result.reason == Keycard::CommandResultType::Cancelled) {
+            emit flowError(result.error);
+            return false;
+        }
         // Check if PUK is exhausted
         auto status = commMgr->applicationStatus();
         if (status.pukRetryCount == 0) {
@@ -333,7 +340,7 @@ bool FlowBase::verifyPIN(bool giveup)
 
     // Check card info (should be available from CommunicationManager)
     auto selectCommand = std::make_unique<Keycard::SelectCommand>(false);
-    Keycard::CommandResult selectResult = commMgr->executeCommandSync(std::move(selectCommand), 30000);
+    Keycard::CommandResult selectResult = commMgr->executeCommandSync(std::move(selectCommand));
     if (!selectResult.success) {
         qCritical() << "FlowBase: Select command failed:" << selectResult.error;
         emit flowError(selectResult.error);
@@ -384,9 +391,13 @@ bool FlowBase::verifyPIN(bool giveup)
 
     // Verify PIN using command
     auto cmd = std::make_unique<Keycard::VerifyPINCommand>(pin);
-    Keycard::CommandResult result = commMgr->executeCommandSync(std::move(cmd), 30000);
+    Keycard::CommandResult result = commMgr->executeCommandSync(std::move(cmd));
 
     if (!result.success) {
+        if (result.reason == Keycard::CommandResultType::Cancelled) {
+            emit flowError(result.error);
+            return false;
+        }
         qCritical() << "FlowBase: PIN verification failed:" << result.error;
         // Wrong PIN, ask again (pauseAndWait will include pinRetries in the event)
         pauseAndWait(FlowSignals::ENTER_PIN, "pin");
@@ -506,11 +517,14 @@ FlowResult FlowBase::loadMnemonic()
         }
 
         auto cmd = std::make_unique<Keycard::GenerateMnemonicCommand>(checksumSize);
-        Keycard::CommandResult cmdResult = commMgr->executeCommandSync(std::move(cmd), 30000);
+        Keycard::CommandResult cmdResult = commMgr->executeCommandSync(std::move(cmd));
 
         if (!cmdResult.success) {
             qWarning() << "LoadAccountFlow: Failed to generate mnemonic:" << cmdResult.error;
-            result[FlowParams::ERROR_KEY] = "generate-failed";
+            if (cmdResult.reason == Keycard::CommandResultType::Cancelled) {
+                emit flowError(cmdResult.error);
+                return FlowResult{false, result};
+            }
             return FlowResult{false, result};
         }
 
@@ -558,11 +572,13 @@ FlowResult FlowBase::loadMnemonic()
     }
 
     auto cmd = std::make_unique<Keycard::LoadSeedCommand>(seed);
-    Keycard::CommandResult cmdResult = commMgr->executeCommandSync(std::move(cmd), 60000);
+    Keycard::CommandResult cmdResult = commMgr->executeCommandSync(std::move(cmd));
 
     if (!cmdResult.success) {
         qWarning() << "LoadAccountFlow: Failed to load seed:" << cmdResult.error;
-        result[FlowParams::ERROR_KEY] = "load-failed";
+        if (cmdResult.reason == Keycard::CommandResultType::Cancelled) {
+            emit flowError(cmdResult.error);
+        }
         return FlowResult{false, result};
     }
 

@@ -151,10 +151,13 @@ QJsonObject StoreMetadataFlow::execute()
     }
 
     auto cmd = std::make_unique<Keycard::StoreMetadataCommand>(cardName, paths);
-    Keycard::CommandResult result = commMgr->executeCommandSync(std::move(cmd), 30000);
+    Keycard::CommandResult result = commMgr->executeCommandSync(std::move(cmd));
 
     if (!result.success) {
         qWarning() << "StoreMetadataFlow: Failed to store metadata:" << result.error;
+        if (result.reason == Keycard::CommandResultType::Cancelled) {
+            emit flowError(result.error);
+        }
         QJsonObject error;
         error[FlowParams::ERROR_KEY] = "store-failed";
         return error;

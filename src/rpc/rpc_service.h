@@ -97,6 +97,7 @@ private:
     QJsonObject handleStoreMetadata(quint64 id, const QJsonObject& params);
     QJsonObject handleExportLoginKeys(quint64 id, const QJsonObject& params);
     QJsonObject handleExportRecoverKeys(quint64 id, const QJsonObject& params);
+    QJsonObject handleCancelCurrentOperation(quint64 id, const QJsonObject& params);
     QJsonObject handleLogin(quint64 id, const QJsonObject& params);
     QJsonObject handleRecover(quint64 id, const QJsonObject& params);
 

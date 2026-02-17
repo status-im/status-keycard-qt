@@ -104,6 +104,10 @@ bool SessionManager::start(bool logEnabled, const QString& logFilePath)
             this, &SessionManager::onCardRemoved,
             Qt::AutoConnection);
 
+    connect(m_commMgr.get(), &Keycard::ICommunicationManager::operationCancelled,
+            this, [this]() { setState(SessionState::Cancelled); },
+            Qt::AutoConnection);
+
     // Start card detection (CommunicationManager should already be init'd by caller)
     if (!m_commMgr->startDetection()) {
         qWarning() << "SessionManager: Failed to start card detection";
@@ -258,7 +262,11 @@ bool SessionManager::ensureAuthorized()
 void SessionManager::updateAndPublishStatus(bool authorized)
 {
     auto statusCmd = std::make_unique<Keycard::GetStatusCommand>();
-    Keycard::CommandResult statusResult = m_commMgr->executeCommandSync(std::move(statusCmd), 30000);
+    Keycard::CommandResult statusResult = m_commMgr->executeCommandSync(std::move(statusCmd));
+    if (!statusResult.success && statusResult.reason == Keycard::CommandResultType::Cancelled) {
+        setState(SessionState::Cancelled);
+        return;
+    }
     if (statusResult.success) {
         QVariantMap statusData = statusResult.data.toMap();
         m_appStatus.pinRetryCount = statusData["pinRetryCount"].toInt();
@@ -330,7 +338,12 @@ bool SessionManager::initialize(const QString& pin, const QString& puk, const QS
     }
 
     auto cmd = std::make_unique<Keycard::InitCommand>(pin, puk, pairingPassword);
-    Keycard::CommandResult result = m_commMgr->executeCommandSync(std::move(cmd), 60000);
+    Keycard::CommandResult result = m_commMgr->executeCommandSync(std::move(cmd));
+
+    if (!result.success && result.reason == Keycard::CommandResultType::Cancelled) {
+        setState(SessionState::Cancelled);
+        return false;
+    }
 
     if (result.success) {
         m_currentCardUID.clear();
@@ -358,7 +371,11 @@ bool SessionManager::authorize(const QString& pin)
     }
 
     auto cmd = std::make_unique<Keycard::VerifyPINCommand>(pin);
-    Keycard::CommandResult result = m_commMgr->executeCommandSync(std::move(cmd), 30000);
+    Keycard::CommandResult result = m_commMgr->executeCommandSync(std::move(cmd));
+    if (!result.success && result.reason == Keycard::CommandResultType::Cancelled) {
+        setState(SessionState::Cancelled);
+        return false;
+    }
     bool authorized = result.success;
 
     updateAndPublishStatus(authorized);
@@ -379,7 +396,12 @@ bool SessionManager::changePIN(const QString& newPIN)
     }
 
     auto cmd = std::make_unique<Keycard::ChangePINCommand>(newPIN);
-    Keycard::CommandResult result = m_commMgr->executeCommandSync(std::move(cmd), 30000);
+    Keycard::CommandResult result = m_commMgr->executeCommandSync(std::move(cmd));
+
+    if (!result.success && result.reason == Keycard::CommandResultType::Cancelled) {
+        setState(SessionState::Cancelled);
+        return false;
+    }
 
     if (result.success) {
         qDebug() << "StatusKeycardQt::SessionManager: PIN changed";
@@ -399,7 +421,12 @@ bool SessionManager::changePUK(const QString& newPUK)
     }
 
     auto cmd = std::make_unique<Keycard::ChangePUKCommand>(newPUK);
-    Keycard::CommandResult result = m_commMgr->executeCommandSync(std::move(cmd), 30000);
+    Keycard::CommandResult result = m_commMgr->executeCommandSync(std::move(cmd));
+
+    if (!result.success && result.reason == Keycard::CommandResultType::Cancelled) {
+        setState(SessionState::Cancelled);
+        return false;
+    }
 
     if (result.success) {
         qDebug() << "StatusKeycardQt::SessionManager: PUK changed";
@@ -424,7 +451,12 @@ bool SessionManager::unblockPIN(const QString& puk, const QString& newPIN)
     }
 
     auto cmd = std::make_unique<Keycard::UnblockPINCommand>(puk, newPIN);
-    Keycard::CommandResult result = m_commMgr->executeCommandSync(std::move(cmd), 30000);
+    Keycard::CommandResult result = m_commMgr->executeCommandSync(std::move(cmd));
+
+    if (!result.success && result.reason == Keycard::CommandResultType::Cancelled) {
+        setState(SessionState::Cancelled);
+        return false;
+    }
 
     if (result.success) {
         qDebug() << "StatusKeycardQt::SessionManager: PIN unblocked";
@@ -452,7 +484,12 @@ QVector<int> SessionManager::generateMnemonic(int length)
     else if (length == 24) checksumSize = 8;
 
     auto cmd = std::make_unique<Keycard::GenerateMnemonicCommand>(checksumSize);
-    Keycard::CommandResult result = m_commMgr->executeCommandSync(std::move(cmd), 30000);
+    Keycard::CommandResult result = m_commMgr->executeCommandSync(std::move(cmd));
+
+    if (!result.success && result.reason == Keycard::CommandResultType::Cancelled) {
+        setState(SessionState::Cancelled);
+        return QVector<int>();
+    }
 
     if (result.success) {
         QVariantList list = result.data.toList();
@@ -509,7 +546,12 @@ QString SessionManager::loadMnemonic(const QString& mnemonic, const QString& pas
     qDebug() << "StatusKeycardQt::SessionManager: Loading seed onto keycard (" << seed.size() << " bytes)";
 
     auto cmd = std::make_unique<Keycard::LoadSeedCommand>(seed);
-    Keycard::CommandResult result = m_commMgr->executeCommandSync(std::move(cmd), 60000);
+    Keycard::CommandResult result = m_commMgr->executeCommandSync(std::move(cmd));
+
+    if (!result.success && result.reason == Keycard::CommandResultType::Cancelled) {
+        setError("Cancelled");
+        return QString();
+    }
 
     if (!result.success) {
         setError(QString("Failed to load seed: %1").arg(result.error));
@@ -538,7 +580,12 @@ bool SessionManager::factoryReset()
     setState(SessionState::FactoryResetting);
 
     auto cmd = std::make_unique<Keycard::FactoryResetCommand>();
-    Keycard::CommandResult result = m_commMgr->executeCommandSync(std::move(cmd), 60000);
+    Keycard::CommandResult result = m_commMgr->executeCommandSync(std::move(cmd));
+
+    if (!result.success && result.reason == Keycard::CommandResultType::Cancelled) {
+        setError("Cancelled");
+        return false;
+    }
 
     if (!result.success) {
         setError(result.error);
@@ -698,7 +745,12 @@ QByteArray SessionManager::exportKeyInternal(bool derive, bool makeCurrent, cons
     }
 
     auto cmd = std::make_unique<Keycard::ExportKeyCommand>(derive, makeCurrent, path, exportType);
-    Keycard::CommandResult result = m_commMgr->executeCommandSync(std::move(cmd), 30000);
+    Keycard::CommandResult result = m_commMgr->executeCommandSync(std::move(cmd));
+
+    if (!result.success && result.reason == Keycard::CommandResultType::Cancelled) {
+        setError("Cancelled");
+        return QByteArray();
+    }
 
     if (!result.success) {
         setError(result.error);
@@ -717,7 +769,12 @@ QByteArray SessionManager::exportKeyExtendedInternal(bool derive, bool makeCurre
     }
 
     auto cmd = std::make_unique<Keycard::ExportKeyExtendedCommand>(derive, makeCurrent, path);
-    Keycard::CommandResult result = m_commMgr->executeCommandSync(std::move(cmd), 30000);
+    Keycard::CommandResult result = m_commMgr->executeCommandSync(std::move(cmd));
+
+    if (!result.success && result.reason == Keycard::CommandResultType::Cancelled) {
+        setError("Cancelled");
+        return QByteArray();
+    }
 
     if (!result.success) {
         setError(result.error);
@@ -1016,9 +1073,12 @@ SessionManager::Metadata SessionManager::getMetadata(bool isMainCommand)
     qDebug() << "StatusKeycardQt::SessionManager: Getting metadata from card";
 
     auto cmd = std::make_unique<Keycard::GetMetadataCommand>();
-    Keycard::CommandResult result = m_commMgr->executeCommandSync(std::move(cmd), 30000);
+    Keycard::CommandResult result = m_commMgr->executeCommandSync(std::move(cmd));
 
     if (!result.success) {
+        if (result.reason == Keycard::CommandResultType::Cancelled) {
+            setError("Cancelled");
+        }
         // Not an error - might just be empty
         qDebug() << "StatusKeycardQt::SessionManager: No metadata on card or error:" << result.error;
         return metadata;
@@ -1122,9 +1182,18 @@ bool SessionManager::storeMetadata(const QString& name, const QStringList& paths
 
     // Store metadata using proper command queue
     auto cmd = std::make_unique<Keycard::StoreMetadataCommand>(name, paths);
-    Keycard::CommandResult result = m_commMgr->executeCommandSync(std::move(cmd), 30000);
+    Keycard::CommandResult result = m_commMgr->executeCommandSync(std::move(cmd));
+
+    if (!result.success && result.reason == Keycard::CommandResultType::Cancelled) {
+        setError("Cancelled");
+        return false;
+    }
 
     if (!result.success) {
+        if (result.reason == Keycard::CommandResultType::Cancelled) {
+            setError("Cancelled");
+            return false;
+        }
         setError(QString("Failed to store metadata: %1").arg(result.error));
         return false;
     }

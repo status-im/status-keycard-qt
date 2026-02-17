@@ -101,10 +101,15 @@ QJsonObject LoginFlow::exportKey(const QString& path, bool includePrivate)
     }
 
     auto cmd = std::make_unique<Keycard::ExportKeyCommand>(true, makeCurrent, path, exportType);
-    Keycard::CommandResult result = commMgr->executeCommandSync(std::move(cmd), 30000);
+    Keycard::CommandResult result = commMgr->executeCommandSync(std::move(cmd));
 
     if (!result.success) {
         qCritical() << "LoginFlow: Export key failed:" << result.error;
+        if (result.reason == Keycard::CommandResultType::Cancelled) {
+            emit flowError(result.error);
+        }
+        QJsonObject error;
+        error[FlowParams::ERROR_KEY] = result.error;
         return QJsonObject();
     }
 

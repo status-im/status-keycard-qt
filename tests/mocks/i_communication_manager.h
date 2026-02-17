@@ -27,7 +27,7 @@ public:
     virtual void stopDetection() = 0;
     
     // Command execution
-    virtual CommandResult executeCommandSync(std::unique_ptr<CardCommand> cmd, int timeoutMs = -1) = 0;
+    virtual CommandResult executeCommandSync(std::unique_ptr<CardCommand> cmd) = 0;
     
     // Card information
     virtual ApplicationInfo applicationInfo() const = 0;

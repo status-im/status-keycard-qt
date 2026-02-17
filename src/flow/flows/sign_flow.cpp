@@ -179,10 +179,13 @@ QJsonObject SignFlow::execute()
     }
 
     auto cmd = std::make_unique<Keycard::SignCommand>(hashBytes, path, false);
-    Keycard::CommandResult cmdResult = commMgr->executeCommandSync(std::move(cmd), 30000);
+    Keycard::CommandResult cmdResult = commMgr->executeCommandSync(std::move(cmd));
 
     if (!cmdResult.success) {
         qCritical() << "SignFlow: Sign failed:" << cmdResult.error;
+        if (cmdResult.reason == Keycard::CommandResultType::Cancelled) {
+            emit flowError(cmdResult.error);
+        }
         QJsonObject error;
         error[FlowParams::ERROR_KEY] = "sign-failed";
         return error;

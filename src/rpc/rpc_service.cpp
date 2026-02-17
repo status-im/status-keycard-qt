@@ -1,11 +1,14 @@
 #include "rpc_service.h"
 #include "../session/session_manager.h"
+#include "../flow/flow_manager.h"
 #include "../storage/file_pairing_storage.h"
 #include "keycard-qt/communication_manager.h"
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QDebug>
+#include <QThread>
+#include <exception>
 
 namespace StatusKeycard {
 
@@ -66,13 +69,27 @@ QString RpcService::processRequest(const QString& requestJson) {
     // Route to handler
     QJsonObject response;
 
-    void startCardOperation();
-    void operationCompleted();
+    if (!m_commMgr) {
+        return QJsonDocument(createErrorResponse(id, -32000, "CommunicationManager not set")).toJson(QJsonDocument::Compact);
+    }
+
     if (method == "keycard.Start") {
         response = handleStart(id, params);
+        return QJsonDocument(response).toJson(QJsonDocument::Compact);
     } else if (method == "keycard.Stop") {
         response = handleStop(id, params);
-    } else if (method == "keycard.GetStatus") {
+        return QJsonDocument(response).toJson(QJsonDocument::Compact);
+    } else if (method == "keycard.CancelCurrentOperation") {
+        response = handleCancelCurrentOperation(id, params);
+        return QJsonDocument(response).toJson(QJsonDocument::Compact);
+    }
+
+    // Enable batch mode BEFORE starting detection so the NFC session stays alive
+    m_commMgr->startBatchOperations();
+    auto batchGuard = [this](void*) { m_commMgr->endBatchOperations(); };
+    std::unique_ptr<void, decltype(batchGuard)> guard(reinterpret_cast<void*>(1), batchGuard);
+
+    if (method == "keycard.GetStatus") {
         response = handleGetStatus(id, params);
     } else if (method == "keycard.Initialize") {
         response = handleInitialize(id, params);
@@ -504,6 +521,20 @@ QJsonObject RpcService::handleExportRecoverKeys(quint64 id, const QJsonObject& p
     }
 
     return createSuccessResponse(id, recoverKeysToJson(keys));
+}
+
+QJsonObject RpcService::handleCancelCurrentOperation(quint64 id, const QJsonObject& params) {
+    Q_UNUSED(params);
+
+    try {
+        m_commMgr->cancelPendingOperations("User cancelled NFC");
+
+        return createSuccessResponse(id, QJsonObject());
+    } catch (const std::exception& e) {
+        return createErrorResponse(id, -32000, QString::fromUtf8(e.what()));
+    } catch (...) {
+        return createErrorResponse(id, -32000, "Unknown error");
+    }
 }
 
 // ============================================================================
