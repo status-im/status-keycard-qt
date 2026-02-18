@@ -3,6 +3,7 @@
 #include <QJsonObject>
 #include <QJsonArray>
 #include "rpc/rpc_service.h"
+#include "mocks/mock_communication_manager.h"
 
 using namespace StatusKeycard;
 
@@ -45,6 +46,7 @@ private slots:
 
 private:
     RpcService* m_service;
+    std::shared_ptr<StatusKeycardTest::MockCommunicationManager> m_mockCommMgr;
     QString sendRequest(const QString& method, const QJsonObject& params = QJsonObject());
     QJsonObject parseResponse(const QString& response);
 };
@@ -62,12 +64,15 @@ void TestRpcService::cleanupTestCase()
 void TestRpcService::init()
 {
     m_service = new RpcService();
+    m_mockCommMgr = std::make_shared<StatusKeycardTest::MockCommunicationManager>();
+    m_service->setCommunicationManager(m_mockCommMgr);
 }
 
 void TestRpcService::cleanup()
 {
     delete m_service;
     m_service = nullptr;
+    m_mockCommMgr.reset();
 }
 
 QString TestRpcService::sendRequest(const QString& method, const QJsonObject& params)
