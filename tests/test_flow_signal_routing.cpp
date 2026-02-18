@@ -7,15 +7,11 @@
 #include "flow/flow_manager.h"
 #include "flow/flow_signals.h"
 #include "flow/flow_types.h"
-#include "mocks/mock_keycard_backend.h"
-#include <keycard-qt/keycard_channel.h>
-#include <keycard-qt/command_set.h>
-#include <keycard-qt/communication_manager.h>
+#include "mocks/mock_communication_manager.h"
 #include <memory>
 
 using namespace StatusKeycard;
 using namespace StatusKeycardTest;
-using namespace Keycard;
 
 class TestFlowSignalRouting : public QObject
 {
@@ -37,14 +33,7 @@ private:
     
     static QList<QString> s_receivedSignalTypes;
     
-    std::shared_ptr<CommandSet> createMockCommandSet()
-    {
-        auto* mockBackend = new MockKeycardBackend();
-        mockBackend->setAutoConnect(true);
-        mockBackend->setCardInitialized(true);
-        auto channel = std::make_shared<KeycardChannel>(mockBackend);
-        return std::make_shared<CommandSet>(channel, nullptr, nullptr);
-    }
+    std::shared_ptr<StatusKeycardTest::MockCommunicationManager> m_mockCommMgr;
 
 private slots:
     void initTestCase()
@@ -62,10 +51,8 @@ private slots:
         
         SignalManager::instance()->setCallback(signalCallback);
         
-        auto cmdSet = createMockCommandSet();
-        auto commMgr = std::make_shared<Keycard::CommunicationManager>();
-        commMgr->init(cmdSet);
-        bool success = FlowManager::instance()->init(commMgr);
+        m_mockCommMgr = std::make_shared<StatusKeycardTest::MockCommunicationManager>();
+        bool success = FlowManager::instance()->init(m_mockCommMgr);
         QVERIFY(success);
         
         QObject::connect(FlowManager::instance(), &FlowManager::flowSignal,
@@ -79,11 +66,6 @@ private slots:
             SignalManager::instance()->emitSignal(jsonString);
         });
         
-        auto* backend = qobject_cast<MockKeycardBackend*>(cmdSet->channel()->backend());
-        if (backend) {
-            backend->startDetection();
-            QTest::qWait(150);
-        }
     }
     
     void cleanup()
@@ -92,6 +74,7 @@ private slots:
         QTest::qWait(100);
         
         FlowManager::destroyInstance();
+        m_mockCommMgr.reset();
         
         SignalManager::instance()->setCallback(nullptr);
         s_receivedSignalTypes.clear();
@@ -99,8 +82,9 @@ private slots:
     
     void testFlowSignalsReachCallback()
     {
+        // Login with no PIN deterministically triggers ENTER_PIN pause signal.
         QJsonObject params;
-        bool success = FlowManager::instance()->startFlow(static_cast<int>(FlowType::GetAppInfo), params);
+        bool success = FlowManager::instance()->startFlow(static_cast<int>(FlowType::Login), params);
         QVERIFY(success);
         
         for (int i = 0; i < 50; ++i) {
@@ -124,7 +108,7 @@ private slots:
         s_receivedSignalTypes.clear();
         
         QJsonObject params;
-        bool success = FlowManager::instance()->startFlow(static_cast<int>(FlowType::GetAppInfo), params);
+        bool success = FlowManager::instance()->startFlow(static_cast<int>(FlowType::Login), params);
         QVERIFY(success);
         
         for (int i = 0; i < 20; ++i) {

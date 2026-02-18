@@ -32,7 +32,7 @@ function(add_keycard_test TEST_NAME)
 endfunction()
 
 # Add test executables
-add_keycard_test(test_rpc_service)
+add_keycard_test(test_rpc_service mocks/mock_communication_manager.cpp)
 add_keycard_test(test_session_manager mocks/mock_communication_manager.cpp)
 add_keycard_test(test_signal_manager)
 
@@ -43,7 +43,7 @@ add_keycard_test(test_flow_logic_only)
 add_keycard_test(test_flow_with_mock_backend mocks/mock_keycard_backend.cpp)
 
 # Flow signal routing test (proves signals reach SignalManager)
-add_keycard_test(test_flow_signal_routing mocks/mock_keycard_backend.cpp)
+add_keycard_test(test_flow_signal_routing mocks/mock_communication_manager.cpp)
 
 # Flow API tests (require hardware - disabled by default)
 # State machine test is pure logic - NO hardware needed, always enabled!
