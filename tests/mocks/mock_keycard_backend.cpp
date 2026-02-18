@@ -144,6 +144,11 @@ bool MockKeycardBackend::isConnected() const
     return m_connected;
 }
 
+bool MockKeycardBackend::isDetectionActive() const
+{
+    return m_detecting;
+}
+
 void MockKeycardBackend::startDetection()
 {
     m_detecting = true;

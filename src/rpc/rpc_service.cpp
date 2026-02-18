@@ -1,13 +1,11 @@
 #include "rpc_service.h"
 #include "../session/session_manager.h"
-#include "../flow/flow_manager.h"
 #include "../storage/file_pairing_storage.h"
 #include "keycard-qt/communication_manager.h"
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QDebug>
-#include <QThread>
 #include <exception>
 
 namespace StatusKeycard {

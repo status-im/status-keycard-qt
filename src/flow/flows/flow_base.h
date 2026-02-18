@@ -252,7 +252,13 @@ protected:
      * @brief Builds CardInfo from ApplicationInfo
      */
     FlowBase::CardInfo buildCardInfo() const;
-    
+
+
+    /**
+     * @brief Request PIN
+     * @return true if PIN is received
+     */
+    bool requirePIN();
     // ============================================================================
     // Helper utilities
     // ============================================================================

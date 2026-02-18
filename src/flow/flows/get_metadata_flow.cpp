@@ -29,6 +29,12 @@ QJsonObject GetMetadataFlow::execute()
         return error;
     }
 
+    if (!requirePIN()) {
+        QJsonObject error;
+        error[FlowParams::ERROR_KEY] = "auth-failed";
+        return error;
+    }
+
     auto cmd = std::make_unique<Keycard::GetMetadataCommand>();
     Keycard::CommandResult cmdResult = commMgr->executeCommandSync(std::move(cmd));
 
@@ -39,9 +45,8 @@ QJsonObject GetMetadataFlow::execute()
         }
         QJsonObject error;
         error[FlowParams::ERROR_KEY] = cmdResult.error;
-        return error;
         qWarning() << "GetMetadataFlow: Failed to get metadata:" << cmdResult.error;
-        // Don't return error - just empty metadata
+        return error;
     } else {
         QVariantMap data = cmdResult.data.toMap();
         metadataData = data["tlvData"].toByteArray();

@@ -23,7 +23,7 @@ QJsonObject LoadAccountFlow::execute()
 {
     qDebug() << "StatusKeycardQt::LoadAccountFlow::execute()";
 
-    if (!selectKeycard()) {
+    if (!requirePIN() || !selectKeycard()) {
         QJsonObject error;
         error[FlowParams::ERROR_KEY] = "select-failed";
         return error;

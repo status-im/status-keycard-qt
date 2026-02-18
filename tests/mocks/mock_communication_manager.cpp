@@ -123,6 +123,12 @@ void MockCommunicationManager::stopDetection()
     m_detectionStarted = false;
 }
 
+void MockCommunicationManager::cancelPendingOperations(const QString& reason)
+{
+    qDebug() << "StatusKeycardQt::[MockCommunicationManager] cancelPendingOperations() called";
+    emit operationCancelled(reason);
+}
+
 Keycard::CommandResult MockCommunicationManager::executeCommandSync(
     std::unique_ptr<Keycard::CardCommand> cmd)
 {

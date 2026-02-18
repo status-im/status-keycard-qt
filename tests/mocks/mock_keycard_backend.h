@@ -39,6 +39,7 @@ public:
     // Override KeycardChannelBackend interface
     QByteArray transmit(const QByteArray& apdu) override;
     bool isConnected() const override;
+    bool isDetectionActive() const override;
     void startDetection() override;
     void stopDetection() override;
     void disconnect() override;

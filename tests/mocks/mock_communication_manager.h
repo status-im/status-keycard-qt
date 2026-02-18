@@ -98,6 +98,7 @@ public:
     
     bool startDetection() override;
     void stopDetection() override;
+    void cancelPendingOperations(const QString& reason) override;
     Keycard::CommandResult executeCommandSync(std::unique_ptr<Keycard::CardCommand> cmd) override;
     Keycard::ApplicationInfo applicationInfo() const override;
     Keycard::ApplicationStatus applicationStatus() const override;

@@ -128,7 +128,7 @@ QJsonObject SignFlow::execute()
 {
     qDebug() << "StatusKeycardQt::SignFlow: Starting";
 
-    if (!selectKeycard() || !requireKeys()) {
+    if (!requirePIN() || !selectKeycard() || !requireKeys()) {
         QJsonObject error;
         error[FlowParams::ERROR_KEY] = "card-error";
         return error;
