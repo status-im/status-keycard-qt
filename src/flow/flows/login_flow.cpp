@@ -27,6 +27,12 @@ QJsonObject LoginFlow::execute()
 {
     qDebug() << "StatusKeycardQt::LoginFlow: Starting execution";
 
+    if (!requirePIN()) {
+        QJsonObject error;
+        error[FlowParams::ERROR_KEY] = "auth-failed";
+        return error;
+    }
+
     // 1. Select keycard applet
     if (!selectKeycard()) {
         qCritical() << "LoginFlow: Failed to select keycard";

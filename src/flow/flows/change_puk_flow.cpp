@@ -13,7 +13,7 @@ ChangePUKFlow::ChangePUKFlow(FlowManager* mgr, const QJsonObject& params, QObjec
 
 QJsonObject ChangePUKFlow::execute()
 {
-    if (!selectKeycard()) {
+    if (!requirePIN() || !selectKeycard()) {
         QJsonObject error;
         error[FlowParams::ERROR_KEY] = "card-error";
         return error;

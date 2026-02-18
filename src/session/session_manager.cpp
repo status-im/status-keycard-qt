@@ -1190,10 +1190,6 @@ bool SessionManager::storeMetadata(const QString& name, const QStringList& paths
     }
 
     if (!result.success) {
-        if (result.reason == Keycard::CommandResultType::Cancelled) {
-            setError("Cancelled");
-            return false;
-        }
         setError(QString("Failed to store metadata: %1").arg(result.error));
         return false;
     }

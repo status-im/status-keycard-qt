@@ -13,8 +13,68 @@
 #include <QJsonArray>
 #include <openssl/evp.h>
 #include <openssl/sha.h>
+#include <openssl/ec.h>
+#include <openssl/bn.h>
 
 namespace StatusKeycard {
+
+namespace {
+QByteArray derivePublicKeyFromPrivate(const QByteArray& privateKey)
+{
+    if (privateKey.size() != 32) {
+        return QByteArray();
+    }
+
+    EC_KEY* ecKey = EC_KEY_new_by_curve_name(NID_secp256k1);
+    if (!ecKey) {
+        return QByteArray();
+    }
+
+    BIGNUM* privateBn = BN_bin2bn(
+        reinterpret_cast<const unsigned char*>(privateKey.constData()),
+        privateKey.size(),
+        nullptr);
+    if (!privateBn || !EC_KEY_set_private_key(ecKey, privateBn)) {
+        if (privateBn) {
+            BN_free(privateBn);
+        }
+        EC_KEY_free(ecKey);
+        return QByteArray();
+    }
+
+    const EC_GROUP* group = EC_KEY_get0_group(ecKey);
+    EC_POINT* publicPoint = EC_POINT_new(group);
+    if (!publicPoint || !EC_POINT_mul(group, publicPoint, privateBn, nullptr, nullptr, nullptr)) {
+        BN_free(privateBn);
+        if (publicPoint) {
+            EC_POINT_free(publicPoint);
+        }
+        EC_KEY_free(ecKey);
+        return QByteArray();
+    }
+
+    EC_KEY_set_public_key(ecKey, publicPoint);
+
+    unsigned char publicKeyBytes[65];
+    size_t publicKeyLen = EC_POINT_point2oct(
+        group,
+        publicPoint,
+        POINT_CONVERSION_UNCOMPRESSED,
+        publicKeyBytes,
+        sizeof(publicKeyBytes),
+        nullptr);
+
+    BN_free(privateBn);
+    EC_POINT_free(publicPoint);
+    EC_KEY_free(ecKey);
+
+    if (publicKeyLen != 65) {
+        return QByteArray();
+    }
+
+    return QByteArray(reinterpret_cast<const char*>(publicKeyBytes), static_cast<int>(publicKeyLen));
+}
+} // namespace
 
 FlowBase::FlowBase(FlowManager* manager, FlowType type, const QJsonObject& params, QObject* parent)
     : QObject(parent)
@@ -324,6 +384,19 @@ bool FlowBase::unblockPIN()
     m_params[FlowParams::PIN] = newPIN;
     qDebug() << "StatusKeycardQt::FlowBase::unblockPIN() - SUCCESS";
     return true;
+}
+
+bool FlowBase::requirePIN()
+{
+        // Check if PIN already in params
+        QString pin = m_params[FlowParams::PIN].toString();
+        if (!pin.isEmpty()) {
+            return true;
+        }
+
+        // Request PIN (empty error means normal PIN request, not an error condition)
+        pauseAndWait(FlowSignals::ENTER_PIN, "");
+        return !m_cancelled;
 }
 
 bool FlowBase::verifyPIN(bool giveup)
@@ -671,23 +744,47 @@ bool FlowBase::parseExportedKey(const QByteArray& data, QByteArray& publicKey, Q
 
     // Find template tag 0xA1 using common TLV utility
     QByteArray template_ = Keycard::TLV::findTag(data, 0xA1);
-    if (template_.isEmpty()) {
-        qWarning() << "parseExportedKey: Failed to find template tag 0xA1";
-        return false;
+    if (!template_.isEmpty()) {
+        // Find public key (0x80)
+        publicKey = Keycard::TLV::findTag(template_, 0x80);
+
+        // Find private key (0x81) if available
+        privateKey = Keycard::TLV::findTag(template_, 0x81);
+
+        // Go-compatible behavior: derive public key from private key when missing.
+        if (publicKey.isEmpty() && !privateKey.isEmpty()) {
+            publicKey = derivePublicKeyFromPrivate(privateKey);
+        }
+
+        if (publicKey.isEmpty()) {
+            qWarning() << "parseExportedKey: No public key found";
+            return false;
+        }
+
+        return true;
     }
 
-    // Find public key (0x80)
-    publicKey = Keycard::TLV::findTag(template_, 0x80);
-
-    // Find private key (0x81) if available
-    privateKey = Keycard::TLV::findTag(template_, 0x81);
-
-    if (publicKey.isEmpty()) {
-        qWarning() << "parseExportedKey: No public key found";
-        return false;
+    // Fallbacks for non-TLV payloads seen in some export responses.
+    if (data.size() == 65 && static_cast<uint8_t>(data[0]) == 0x04) {
+        publicKey = data;
+        return true;
     }
 
-    return true;
+    if (data.size() == 64) {
+        publicKey = QByteArray(1, static_cast<char>(0x04)) + data;
+        return true;
+    }
+
+    if (data.size() == 32) {
+        privateKey = data;
+        publicKey = derivePublicKeyFromPrivate(privateKey);
+        if (!publicKey.isEmpty()) {
+            return true;
+        }
+    }
+
+    qWarning() << "parseExportedKey: Unsupported export key payload format";
+    return false;
 }
 
 } // namespace StatusKeycard

@@ -31,7 +31,7 @@ QJsonObject RecoverAccountFlow::execute()
     qDebug() << "StatusKeycardQt::RecoverAccountFlow: Starting execution";
 
     // 1. Select keycard applet
-    if (!selectKeycard()) {
+    if (!requirePIN() || !selectKeycard()) {
         qCritical() << "RecoverAccountFlow: Failed to select keycard";
         QJsonObject error;
         error[FlowParams::ERROR_KEY] = "select-failed";
