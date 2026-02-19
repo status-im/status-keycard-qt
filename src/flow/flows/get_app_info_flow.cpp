@@ -58,6 +58,7 @@ QJsonObject GetAppInfoFlow::execute()
 
         if (!result.success) {
             qWarning() << "GetAppInfoFlow: Factory reset failed:" << result.error;
+            emitCancelledIfNeeded(result);
             QJsonObject error;
             error[FlowParams::ERROR_KEY] = result.error;
             return error;

@@ -111,9 +111,7 @@ QJsonObject LoginFlow::exportKey(const QString& path, bool includePrivate)
 
     if (!result.success) {
         qCritical() << "LoginFlow: Export key failed:" << result.error;
-        if (result.reason == Keycard::CommandResultType::Cancelled) {
-            emit flowError(result.error);
-        }
+        emitCancelledIfNeeded(result);
         QJsonObject error;
         error[FlowParams::ERROR_KEY] = result.error;
         return QJsonObject();

@@ -152,9 +152,7 @@ QJsonObject RecoverAccountFlow::exportKey(const QString& path, bool includePriva
 
     if (!result.success) {
         qCritical() << "RecoverAccountFlow: Export key failed:" << result.error;
-        if (result.reason == Keycard::CommandResultType::Cancelled) {
-            emit flowError(result.error);
-        }
+        emitCancelledIfNeeded(result);
         return QJsonObject();
     }
 

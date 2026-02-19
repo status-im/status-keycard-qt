@@ -9,6 +9,7 @@
 #include <QMutex>
 #include <keycard-qt/command_set.h>
 #include <keycard-qt/types.h>
+#include <keycard-qt/card_command.h>
 
 // Forward declarations
 namespace Keycard {
@@ -113,8 +114,21 @@ signals:
      * @param error Error message
      */
     void flowError(const QString& error);
+
+    /**
+     * @brief Flow was cancelled during command execution
+     * @param error Cancellation error message
+     */
+    void flowCancelled(const QString& error);
     
 protected:
+    /**
+     * @brief Emit flowCancelled for command cancellation failures
+     * @param result Command execution result
+     * @return true if result is a cancellation and signal was emitted
+     */
+    bool emitCancelledIfNeeded(const Keycard::CommandResult& result);
+
     // ============================================================================
     // Access to manager resources
     // ============================================================================

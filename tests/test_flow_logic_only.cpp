@@ -41,6 +41,7 @@ private slots:
         QCOMPARE(FlowParams::KEY_UID, QString("key-uid"));
         QCOMPARE(FlowParams::INSTANCE_UID, QString("instance-uid"));
         QCOMPARE(FlowParams::ERROR_KEY, QString("error"));
+        QCOMPARE(FlowParams::CANCELLED, QString("cancelled"));
     }
 
     void testKeyExportConstants()

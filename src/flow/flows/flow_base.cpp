@@ -177,6 +177,16 @@ std::shared_ptr<Keycard::ICommunicationManager> FlowBase::communicationManager()
     return m_manager->communicationManager();
 }
 
+bool FlowBase::emitCancelledIfNeeded(const Keycard::CommandResult& result)
+{
+    if (result.reason == Keycard::CommandResultType::Cancelled) {
+        m_cancelled = true;
+        emit flowCancelled(result.error);
+        return true;
+    }
+    return false;
+}
+
 // ============================================================================
 // Pause/Resume mechanism
 // ============================================================================
@@ -253,7 +263,9 @@ bool FlowBase::selectKeycard()
 
     if (!result.success) {
         qCritical() << "FlowBase: SELECT failed:" << result.error;
-        emit flowError(result.error);
+        if (!emitCancelledIfNeeded(result)) {
+            emit flowError(result.error);
+        }
         return false;
     }
 
@@ -315,9 +327,7 @@ FlowResult FlowBase::initializeKeycard()
 
     if (!cmdResult.success) {
         qWarning() << "FlowBase: Card initialization failed:" << cmdResult.error;
-        if (cmdResult.reason == Keycard::CommandResultType::Cancelled) {
-            emit flowError(cmdResult.error);
-        }
+        emitCancelledIfNeeded(cmdResult);
         return FlowResult{false, result};
     }
 
@@ -361,9 +371,7 @@ bool FlowBase::unblockPIN()
     Keycard::CommandResult result = commMgr->executeCommandSync(std::move(cmd));
 
     if (!result.success) {
-
-        if (result.reason == Keycard::CommandResultType::Cancelled) {
-            emit flowError(result.error);
+        if (emitCancelledIfNeeded(result)) {
             return false;
         }
         // Check if PUK is exhausted
@@ -416,7 +424,9 @@ bool FlowBase::verifyPIN(bool giveup)
     Keycard::CommandResult selectResult = commMgr->executeCommandSync(std::move(selectCommand));
     if (!selectResult.success) {
         qCritical() << "FlowBase: Select command failed:" << selectResult.error;
-        emit flowError(selectResult.error);
+        if (!emitCancelledIfNeeded(selectResult)) {
+            emit flowError(selectResult.error);
+        }
         return false;
     }
     QVariantMap selectData = selectResult.data.toMap();
@@ -467,8 +477,7 @@ bool FlowBase::verifyPIN(bool giveup)
     Keycard::CommandResult result = commMgr->executeCommandSync(std::move(cmd));
 
     if (!result.success) {
-        if (result.reason == Keycard::CommandResultType::Cancelled) {
-            emit flowError(result.error);
+        if (emitCancelledIfNeeded(result)) {
             return false;
         }
         qCritical() << "FlowBase: PIN verification failed:" << result.error;
@@ -594,8 +603,7 @@ FlowResult FlowBase::loadMnemonic()
 
         if (!cmdResult.success) {
             qWarning() << "LoadAccountFlow: Failed to generate mnemonic:" << cmdResult.error;
-            if (cmdResult.reason == Keycard::CommandResultType::Cancelled) {
-                emit flowError(cmdResult.error);
+            if (emitCancelledIfNeeded(cmdResult)) {
                 return FlowResult{false, result};
             }
             return FlowResult{false, result};
@@ -649,9 +657,7 @@ FlowResult FlowBase::loadMnemonic()
 
     if (!cmdResult.success) {
         qWarning() << "LoadAccountFlow: Failed to load seed:" << cmdResult.error;
-        if (cmdResult.reason == Keycard::CommandResultType::Cancelled) {
-            emit flowError(cmdResult.error);
-        }
+        emitCancelledIfNeeded(cmdResult);
         return FlowResult{false, result};
     }
 

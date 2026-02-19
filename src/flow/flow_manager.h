@@ -174,6 +174,12 @@ private:
      * @param error Error message
      */
     void onFlowError(const QString& error);
+
+    /**
+     * @brief Handle flow cancellation (from FlowBase)
+     * @param error Cancellation error message
+     */
+    void onFlowCancelled(const QString& error);
     
 private:
     // Singleton
