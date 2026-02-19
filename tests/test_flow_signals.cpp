@@ -76,9 +76,12 @@ private slots:
         QJsonObject result;
         result[FlowParams::KEY_UID] = "test-key-uid";
         result[FlowParams::INSTANCE_UID] = "test-instance-uid";
+        result[FlowParams::CANCELLED] = true;
         
         QVERIFY(result.contains(FlowParams::KEY_UID));
         QVERIFY(result.contains(FlowParams::INSTANCE_UID));
+        QVERIFY(result.contains(FlowParams::CANCELLED));
+        QVERIFY(result[FlowParams::CANCELLED].toBool());
     }
 
     void testErrorFormat()

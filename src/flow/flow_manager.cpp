@@ -145,6 +145,9 @@ bool FlowManager::startFlow(int flowType, const QJsonObject& params)
     connect(m_currentFlow, &FlowBase::flowError,
             this, &FlowManager::onFlowError);
 
+    connect(m_currentFlow, &FlowBase::flowCancelled,
+            this, &FlowManager::onFlowCancelled);
+
     // Transition to Running
     if (!m_stateMachine->transition(FlowState::Running)) {
         m_lastError = "Failed to transition to Running state";
@@ -355,6 +358,30 @@ void FlowManager::onFlowError(const QString& error)
     FlowSignals::emitFlowResult(result);
 
     // Cleanup
+    cleanupFlow();
+}
+
+void FlowManager::onFlowCancelled(const QString& error)
+{
+    qWarning() << "FlowManager: Flow cancelled:" << error;
+
+    QMutexLocker locker(&m_mutex);
+    m_lastError = error;
+
+    QJsonObject result;
+    result[FlowParams::ERROR_KEY] = error;
+    result[FlowParams::CANCELLED] = true;
+
+    if (m_commMgr) {
+        QJsonObject cardInfo = buildCardInfoFromCommandSet();
+        for (auto it = cardInfo.begin(); it != cardInfo.end(); ++it) {
+            result[it.key()] = it.value();
+        }
+    }
+
+    locker.unlock();
+
+    FlowSignals::emitFlowResult(result);
     cleanupFlow();
 }
 

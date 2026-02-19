@@ -51,6 +51,7 @@ QJsonObject ExportPublicFlow::execute()
 
         if (!masterResult.success) {
             qCritical() << "ExportPublicFlow: Master export failed:" << masterResult.error;
+            emitCancelledIfNeeded(masterResult);
             QJsonObject error;
             error[FlowParams::ERROR_KEY] = "export-failed";
             return error;
@@ -123,6 +124,7 @@ QJsonObject ExportPublicFlow::execute()
 
         if (!result.success) {
             qCritical() << "ExportPublicFlow: Export failed for path" << path << ":" << result.error;
+            emitCancelledIfNeeded(result);
             QJsonObject error;
             error[FlowParams::ERROR_KEY] = "export-failed";
             return error;

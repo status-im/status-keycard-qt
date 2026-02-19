@@ -40,9 +40,7 @@ QJsonObject GetMetadataFlow::execute()
 
     QByteArray metadataData;
     if (!cmdResult.success) {
-        if (cmdResult.reason == Keycard::CommandResultType::Cancelled) {
-            emit flowError(cmdResult.error);
-        }
+        emitCancelledIfNeeded(cmdResult);
         QJsonObject error;
         error[FlowParams::ERROR_KEY] = cmdResult.error;
         qWarning() << "GetMetadataFlow: Failed to get metadata:" << cmdResult.error;
@@ -192,9 +190,7 @@ QJsonObject GetMetadataFlow::execute()
             Keycard::CommandResult result = commMgr->executeCommandSync(std::move(cmd));
 
             if (!result.success) {
-                if (result.reason == Keycard::CommandResultType::Cancelled) {
-                    emit flowError(result.error);
-                }
+                emitCancelledIfNeeded(result);
                 QJsonObject error;
                 error[FlowParams::ERROR_KEY] = result.error;
                 return error;
@@ -271,9 +267,7 @@ QJsonObject GetMetadataFlow::execute()
             Keycard::CommandResult result = commMgr->executeCommandSync(std::move(cmd));
 
             if (!result.success) {
-                if (result.reason == Keycard::CommandResultType::Cancelled) {
-                    emit flowError(result.error);
-                }
+                emitCancelledIfNeeded(result);
                 QJsonObject error;
                 error[FlowParams::ERROR_KEY] = result.error;
                 return error;

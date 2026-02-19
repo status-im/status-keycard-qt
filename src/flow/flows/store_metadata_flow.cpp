@@ -155,9 +155,7 @@ QJsonObject StoreMetadataFlow::execute()
 
     if (!result.success) {
         qWarning() << "StoreMetadataFlow: Failed to store metadata:" << result.error;
-        if (result.reason == Keycard::CommandResultType::Cancelled) {
-            emit flowError(result.error);
-        }
+        emitCancelledIfNeeded(result);
         QJsonObject error;
         error[FlowParams::ERROR_KEY] = "store-failed";
         return error;

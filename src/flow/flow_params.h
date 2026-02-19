@@ -14,6 +14,7 @@ namespace FlowParams {
 
 // Error and status keys
 const QString ERROR_KEY = "error";
+const QString CANCELLED = "cancelled";
 const QString INSTANCE_UID = "instance-uid";
 const QString KEY_UID = "key-uid";
 const QString FREE_SLOTS = "free-pairing-slots";

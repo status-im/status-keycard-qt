@@ -183,9 +183,7 @@ QJsonObject SignFlow::execute()
 
     if (!cmdResult.success) {
         qCritical() << "SignFlow: Sign failed:" << cmdResult.error;
-        if (cmdResult.reason == Keycard::CommandResultType::Cancelled) {
-            emit flowError(cmdResult.error);
-        }
+        emitCancelledIfNeeded(cmdResult);
         QJsonObject error;
         error[FlowParams::ERROR_KEY] = "sign-failed";
         return error;

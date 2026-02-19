@@ -44,6 +44,7 @@ QJsonObject ChangePairingFlow::execute()
     Keycard::CommandResult result = commMgr->executeCommandSync(std::move(cmd));
 
     if (!result.success) {
+        emitCancelledIfNeeded(result);
         QJsonObject error;
         error[FlowParams::ERROR_KEY] = result.error;
         return error;
