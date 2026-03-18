@@ -3,6 +3,7 @@
 #include <QJsonObject>
 #include <QJsonArray>
 #include "rpc/rpc_service.h"
+#include "utils/constants.h"
 #include "mocks/mock_communication_manager.h"
 
 using namespace StatusKeycard;
@@ -317,7 +318,7 @@ void TestRpcService::testStoreMetadataMethod()
 {
     QJsonObject params;
     params["name"] = "Test Wallet";
-    params["paths"] = QJsonArray({"m/44'/60'/0'/0", "m/44'/60'/0'/1"});
+    params["paths"] = QJsonArray({PathWalletRoot + "/0", PathWalletRoot + "/1"});
 
     QString response = sendRequest("keycard.StoreMetadata", params);
     QJsonObject resp = parseResponse(response);

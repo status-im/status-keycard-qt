@@ -51,11 +51,6 @@ private:
      * @return KeyPair JSON or empty on error
      */
     QJsonObject exportKey(const QString& path, bool includePrivate);
-    
-    // BIP44 paths (matching status-keycard-go)
-    static const QString EIP1581_PATH;    // m/43'/60'/1581'
-    static const QString WHISPER_PATH;    // m/43'/60'/1581'/0'/0
-    static const QString ENCRYPTION_PATH; // m/43'/60'/1581'/1'/0
 };
 
 } // namespace StatusKeycard

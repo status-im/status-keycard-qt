@@ -1,6 +1,7 @@
 #include "recover_account_flow.h"
 #include "../flow_manager.h"
 #include "../flow_params.h"
+#include "../../utils/constants.h"
 #include <keycard-qt/command_set.h>
 #include <keycard-qt/communication_manager.h>
 #include <keycard-qt/card_command.h>
@@ -8,14 +9,6 @@
 #include <QDebug>
 
 namespace StatusKeycard {
-
-// BIP44 paths (matching status-keycard-go exactly)
-const QString RecoverAccountFlow::EIP1581_PATH = "m/43'/60'/1581'";
-const QString RecoverAccountFlow::WHISPER_PATH = "m/43'/60'/1581'/0'/0";
-const QString RecoverAccountFlow::ENCRYPTION_PATH = "m/43'/60'/1581'/1'/0";
-const QString RecoverAccountFlow::WALLET_ROOT_PATH = "m/44'/60'/0'";
-const QString RecoverAccountFlow::WALLET_PATH = "m/44'/60'/0'/0";
-const QString RecoverAccountFlow::MASTER_PATH = "m";
 
 RecoverAccountFlow::RecoverAccountFlow(FlowManager* manager, const QJsonObject& params, QObject* parent)
     : FlowBase(manager, FlowType::RecoverAccount, params, parent)
@@ -55,7 +48,7 @@ QJsonObject RecoverAccountFlow::execute()
 
     // 6. Export encryption key (with private key) - FIRST to match status-keycard-go order
     qDebug() << "StatusKeycardQt::RecoverAccountFlow: Exporting encryption key...";
-    QJsonObject encKey = exportKey(ENCRYPTION_PATH, true);
+    QJsonObject encKey = exportKey(PathEncryption, true);
     if (encKey.isEmpty()) {
         qCritical() << "RecoverAccountFlow: Failed to export encryption key";
         QJsonObject error;
@@ -65,7 +58,7 @@ QJsonObject RecoverAccountFlow::execute()
 
     // 7. Export whisper key (with private key) - SECOND to match status-keycard-go order
     qDebug() << "StatusKeycardQt::RecoverAccountFlow: Exporting whisper key...";
-    QJsonObject whisperKey = exportKey(WHISPER_PATH, true);
+    QJsonObject whisperKey = exportKey(PathWhisper, true);
     if (whisperKey.isEmpty()) {
         qCritical() << "RecoverAccountFlow: Failed to export whisper key";
         QJsonObject error;
@@ -75,7 +68,7 @@ QJsonObject RecoverAccountFlow::execute()
 
     // 8. Export EIP1581 key (public only)
     qDebug() << "StatusKeycardQt::RecoverAccountFlow: Exporting EIP1581 key...";
-    QJsonObject eip1581Key = exportKey(EIP1581_PATH, false);
+    QJsonObject eip1581Key = exportKey(PathEip1581, false);
     if (eip1581Key.isEmpty()) {
         qCritical() << "RecoverAccountFlow: Failed to export EIP1581 key";
         QJsonObject error;
@@ -85,7 +78,7 @@ QJsonObject RecoverAccountFlow::execute()
 
     // 9. Export wallet root key (extended public - for now just public)
     qDebug() << "StatusKeycardQt::RecoverAccountFlow: Exporting wallet root key...";
-    QJsonObject walletRootKey = exportKey(WALLET_ROOT_PATH, false);
+    QJsonObject walletRootKey = exportKey(PathWalletRoot, false);
     if (walletRootKey.isEmpty()) {
         qCritical() << "RecoverAccountFlow: Failed to export wallet root key";
         QJsonObject error;
@@ -95,7 +88,7 @@ QJsonObject RecoverAccountFlow::execute()
 
     // 10. Export wallet key (public only)
     qDebug() << "StatusKeycardQt::RecoverAccountFlow: Exporting wallet key...";
-    QJsonObject walletKey = exportKey(WALLET_PATH, false);
+    QJsonObject walletKey = exportKey(PathWalletRoot, false);
     if (walletKey.isEmpty()) {
         qCritical() << "RecoverAccountFlow: Failed to export wallet key";
         QJsonObject error;
@@ -105,7 +98,7 @@ QJsonObject RecoverAccountFlow::execute()
 
     // 11. Export master key (public only)
     qDebug() << "StatusKeycardQt::RecoverAccountFlow: Exporting master key...";
-    QJsonObject masterKey = exportKey(MASTER_PATH, false);
+    QJsonObject masterKey = exportKey(PathMaster, false);
     if (masterKey.isEmpty()) {
         qCritical() << "RecoverAccountFlow: Failed to export master key";
         QJsonObject error;
@@ -135,7 +128,7 @@ QJsonObject RecoverAccountFlow::exportKey(const QString& path, bool includePriva
     }
 
     // Export key
-    bool makeCurrent = (path == MASTER_PATH); // Only for master path
+    bool makeCurrent = (path == PathMaster); // Only for master path
     uint8_t exportType = includePrivate ?
         Keycard::APDU::P2ExportKeyPrivateAndPublic :
         Keycard::APDU::P2ExportKeyPublicOnly;

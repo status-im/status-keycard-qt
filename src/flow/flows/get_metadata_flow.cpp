@@ -1,6 +1,7 @@
 #include "get_metadata_flow.h"
 #include "../flow_manager.h"
 #include "../flow_params.h"
+#include "../../utils/constants.h"
 #include <keycard-qt/command_set.h>
 #include <keycard-qt/communication_manager.h>
 #include <keycard-qt/card_command.h>
@@ -185,7 +186,7 @@ QJsonObject GetMetadataFlow::execute()
             qDebug() << "StatusKeycardQt::GetMetadataFlow: Exporting master address";
 
             // Phase 6: CommunicationManager is always available (already checked at start)
-            auto cmd = std::make_unique<Keycard::ExportKeyCommand>(true, false, "m",
+            auto cmd = std::make_unique<Keycard::ExportKeyCommand>(true, false, PathMaster,
                 Keycard::APDU::P2ExportKeyPublicOnly);
             Keycard::CommandResult result = commMgr->executeCommandSync(std::move(cmd));
 

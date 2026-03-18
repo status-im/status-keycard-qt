@@ -1,6 +1,7 @@
 #include <QtTest/QtTest>
 #include "mocks/mock_keycard_backend.h"
 #include "flow/flow_params.h"
+#include "utils/constants.h"
 #include <QJsonObject>
 #include <QSignalSpy>
 
@@ -123,7 +124,7 @@ private slots:
     {
         QJsonObject params;
         params[FlowParams::TX_HASH] = "0xabcdef1234567890";
-        params[FlowParams::BIP44_PATH] = "m/44'/60'/0'/0/0";
+        params[FlowParams::BIP44_PATH] = PathWallet;
         params[FlowParams::PIN] = "000000";
         
         QVERIFY(params.contains(FlowParams::TX_HASH));
@@ -144,7 +145,7 @@ private slots:
     void testExportPublicFlowParams()
     {
         QJsonObject params;
-        params[FlowParams::BIP44_PATH] = "m/44'/60'/0'/0/0";
+        params[FlowParams::BIP44_PATH] = PathWallet;
         params[FlowParams::PIN] = "000000";
         
         QVERIFY(params.contains(FlowParams::BIP44_PATH));
