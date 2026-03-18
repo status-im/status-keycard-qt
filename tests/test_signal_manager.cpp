@@ -3,6 +3,7 @@
 #include <QJsonObject>
 #include "signal_manager.h"
 #include "session/session_manager.h"
+#include "utils/constants.h"
 
 using namespace StatusKeycard;
 
@@ -115,8 +116,8 @@ void TestSignalManager::testEmitStatusChanged()
     status.keycardStatus->remainingAttemptsPIN = 3;
     status.keycardStatus->remainingAttemptsPUK = 5;
     status.keycardStatus->keyInitialized = true;
-    status.keycardStatus->path = "m/44'/60'/0'";
-    
+    status.keycardStatus->path = PathWalletRoot;
+
     m_signalManager->emitStatusChanged(status);
     
     QCOMPARE(s_receivedSignals.size(), 1);

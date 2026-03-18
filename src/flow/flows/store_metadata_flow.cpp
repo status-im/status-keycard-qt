@@ -2,6 +2,7 @@
 #include "../flow_manager.h"
 #include "../flow_params.h"
 #include "../flow_signals.h"
+#include "../../utils/constants.h"
 #include <keycard-qt/command_set.h>
 #include <keycard-qt/communication_manager.h>
 #include <keycard-qt/card_command.h>
@@ -58,11 +59,10 @@ QJsonObject StoreMetadataFlow::execute()
 
     // Parse wallet paths (matching Go implementation)
     // Only store the last component of each path
-    const QString walletRootPath = "m/44'/60'/0'/0";
     for (const QJsonValue& pathValue : walletPathsArray) {
         QString path = pathValue.toString();
-        if (!path.startsWith(walletRootPath)) {
-            qWarning() << "StoreMetadataFlow: Path" << path << "does not start with" << walletRootPath;
+        if (!path.startsWith(PathWalletRoot)) {
+            qWarning() << "StoreMetadataFlow: Path" << path << "does not start with" << PathWalletRoot;
             continue;
         }
 

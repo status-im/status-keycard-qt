@@ -1,6 +1,7 @@
 #include "login_flow.h"
 #include "../flow_manager.h"
 #include "../flow_params.h"
+#include "../../utils/constants.h"
 #include <keycard-qt/command_set.h>
 #include <keycard-qt/communication_manager.h>
 #include <keycard-qt/card_command.h>
@@ -8,11 +9,6 @@
 #include <QDebug>
 
 namespace StatusKeycard {
-
-// BIP44 paths (matching status-keycard-go exactly)
-const QString LoginFlow::EIP1581_PATH = "m/43'/60'/1581'";
-const QString LoginFlow::WHISPER_PATH = "m/43'/60'/1581'/0'/0";
-const QString LoginFlow::ENCRYPTION_PATH = "m/43'/60'/1581'/1'/0";
 
 LoginFlow::LoginFlow(FlowManager* manager, const QJsonObject& params, QObject* parent)
     : FlowBase(manager, FlowType::Login, params, parent)
@@ -58,7 +54,7 @@ QJsonObject LoginFlow::execute()
 
     // 4. Export encryption key (with private key) - FIRST to match status-keycard-go order
     qDebug() << "StatusKeycardQt::LoginFlow: Exporting encryption key...";
-    QJsonObject encKey = exportKey(ENCRYPTION_PATH, true);
+    QJsonObject encKey = exportKey(PathEncryption, true);
     if (encKey.isEmpty()) {
         qCritical() << "LoginFlow: Failed to export encryption key";
         QJsonObject error;
@@ -68,7 +64,7 @@ QJsonObject LoginFlow::execute()
 
     // 5. Export whisper key (with private key) - SECOND to match status-keycard-go order
     qDebug() << "StatusKeycardQt::LoginFlow: Exporting whisper key...";
-    QJsonObject whisperKey = exportKey(WHISPER_PATH, true);
+    QJsonObject whisperKey = exportKey(PathWhisper, true);
     if (whisperKey.isEmpty()) {
         qCritical() << "LoginFlow: Failed to export whisper key";
         QJsonObject error;
@@ -94,7 +90,7 @@ QJsonObject LoginFlow::exportKey(const QString& path, bool includePrivate)
     }
 
     // derive=true, makeCurrent=(path=="m"), exportType=private or public
-    bool makeCurrent = (path == "m"); // Only for master path
+    bool makeCurrent = (path == PathMaster); // Only for master path
     uint8_t exportType = includePrivate ?
         Keycard::APDU::P2ExportKeyPrivateAndPublic :
         Keycard::APDU::P2ExportKeyPublicOnly;

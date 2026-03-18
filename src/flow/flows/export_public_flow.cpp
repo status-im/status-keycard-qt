@@ -2,6 +2,7 @@
 #include "../flow_manager.h"
 #include "../flow_params.h"
 #include "../flow_signals.h"
+#include "../../utils/constants.h"
 #include <keycard-qt/command_set.h>
 #include <keycard-qt/communication_manager.h>
 #include <keycard-qt/card_command.h>
@@ -46,7 +47,7 @@ QJsonObject ExportPublicFlow::execute()
     QJsonObject result = buildCardInfoJson();
     if (exportMasterAddr) {
         auto masterCmd = std::make_unique<Keycard::ExportKeyCommand>(
-            true, true, "m", Keycard::APDU::P2ExportKeyPublicOnly);
+            true, true, PathMaster, Keycard::APDU::P2ExportKeyPublicOnly);
         Keycard::CommandResult masterResult = commMgr->executeCommandSync(std::move(masterCmd));
 
         if (!masterResult.success) {

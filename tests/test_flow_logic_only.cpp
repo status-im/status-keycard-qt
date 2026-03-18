@@ -3,6 +3,7 @@
 #include <QJsonDocument>
 #include "flow/flow_types.h"
 #include "flow/flow_params.h"
+#include "utils/constants.h"
 
 using namespace StatusKeycard;
 
@@ -86,7 +87,7 @@ private slots:
     {
         QJsonObject params;
         params[FlowParams::TX_HASH] = "0xabcdef123456789";
-        params[FlowParams::BIP44_PATH] = "m/44'/60'/0'/0/0";
+        params[FlowParams::BIP44_PATH] = PathWallet;
         params[FlowParams::PIN] = "000000";
         
         QVERIFY(params.contains(FlowParams::TX_HASH));
@@ -299,7 +300,7 @@ private slots:
         params[FlowParams::PIN] = "000000";
         
         QVERIFY(!params.contains(FlowParams::BIP44_PATH));
-        params[FlowParams::BIP44_PATH] = "m/44'/60'/0'/0/0";
+        params[FlowParams::BIP44_PATH] = PathWallet;
         QVERIFY(params.contains(FlowParams::BIP44_PATH));
     }
 };

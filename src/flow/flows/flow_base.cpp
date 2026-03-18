@@ -1,80 +1,23 @@
 #include "flow_base.h"
 #include "../flow_manager.h"
 #include "../flow_signals.h"
+#include "../../utils/crypto_utils.h"
 #include <keycard-qt/keycard_channel.h>
 #include <keycard-qt/communication_manager.h>
 #include <keycard-qt/card_command.h>
 #include <keycard-qt/tlv_utils.h>
+#ifdef KEYCARD_QT_HAS_OPENSSL
+#include <openssl/evp.h>
+#include <openssl/sha.h>
+#endif
 #include <QDebug>
 #include <QThread>
 #include <QEventLoop>
 #include <QTimer>
 #include <QCryptographicHash>
 #include <QJsonArray>
-#include <openssl/evp.h>
-#include <openssl/sha.h>
-#include <openssl/ec.h>
-#include <openssl/bn.h>
 
 namespace StatusKeycard {
-
-namespace {
-QByteArray derivePublicKeyFromPrivate(const QByteArray& privateKey)
-{
-    if (privateKey.size() != 32) {
-        return QByteArray();
-    }
-
-    EC_KEY* ecKey = EC_KEY_new_by_curve_name(NID_secp256k1);
-    if (!ecKey) {
-        return QByteArray();
-    }
-
-    BIGNUM* privateBn = BN_bin2bn(
-        reinterpret_cast<const unsigned char*>(privateKey.constData()),
-        privateKey.size(),
-        nullptr);
-    if (!privateBn || !EC_KEY_set_private_key(ecKey, privateBn)) {
-        if (privateBn) {
-            BN_free(privateBn);
-        }
-        EC_KEY_free(ecKey);
-        return QByteArray();
-    }
-
-    const EC_GROUP* group = EC_KEY_get0_group(ecKey);
-    EC_POINT* publicPoint = EC_POINT_new(group);
-    if (!publicPoint || !EC_POINT_mul(group, publicPoint, privateBn, nullptr, nullptr, nullptr)) {
-        BN_free(privateBn);
-        if (publicPoint) {
-            EC_POINT_free(publicPoint);
-        }
-        EC_KEY_free(ecKey);
-        return QByteArray();
-    }
-
-    EC_KEY_set_public_key(ecKey, publicPoint);
-
-    unsigned char publicKeyBytes[65];
-    size_t publicKeyLen = EC_POINT_point2oct(
-        group,
-        publicPoint,
-        POINT_CONVERSION_UNCOMPRESSED,
-        publicKeyBytes,
-        sizeof(publicKeyBytes),
-        nullptr);
-
-    BN_free(privateBn);
-    EC_POINT_free(publicPoint);
-    EC_KEY_free(ecKey);
-
-    if (publicKeyLen != 65) {
-        return QByteArray();
-    }
-
-    return QByteArray(reinterpret_cast<const char*>(publicKeyBytes), static_cast<int>(publicKeyLen));
-}
-} // namespace
 
 FlowBase::FlowBase(FlowManager* manager, FlowType type, const QJsonObject& params, QObject* parent)
     : QObject(parent)
@@ -724,17 +667,7 @@ QJsonObject FlowBase::buildCardInfoJson() const
 }
 
 QString FlowBase::publicKeyToAddress(const QByteArray& pubKey) {
-    if (pubKey.size() != 65 || pubKey[0] != 0x04) {
-        qWarning() << "Invalid public key format";
-        return QString();
-    }
-
-    // Remove 0x04 prefix, hash with Keccak-256, take last 20 bytes
-    QByteArray pubKeyData = pubKey.mid(1);
-    QByteArray hash = QCryptographicHash::hash(pubKeyData, QCryptographicHash::Keccak_256);
-    QByteArray address = hash.right(20);
-
-    return QString("0x") + address.toHex();
+    return CryptoUtils::publicKeyToAddress(pubKey);
 }
 
 // TLV parsing functions moved to tlv_utils.h/cpp - using Keycard::TLV:: utilities
@@ -759,7 +692,7 @@ bool FlowBase::parseExportedKey(const QByteArray& data, QByteArray& publicKey, Q
 
         // Go-compatible behavior: derive public key from private key when missing.
         if (publicKey.isEmpty() && !privateKey.isEmpty()) {
-            publicKey = derivePublicKeyFromPrivate(privateKey);
+            publicKey = CryptoUtils::derivePublicKeyFromPrivate(privateKey);
         }
 
         if (publicKey.isEmpty()) {
@@ -783,7 +716,7 @@ bool FlowBase::parseExportedKey(const QByteArray& data, QByteArray& publicKey, Q
 
     if (data.size() == 32) {
         privateKey = data;
-        publicKey = derivePublicKeyFromPrivate(privateKey);
+        publicKey = CryptoUtils::derivePublicKeyFromPrivate(privateKey);
         if (!publicKey.isEmpty()) {
             return true;
         }

@@ -1,5 +1,7 @@
 #include "session_manager.h"
 #include "signal_manager.h"
+#include "../utils/constants.h"
+#include "../utils/crypto_utils.h"
 #include <keycard-qt/types.h>
 #include <keycard-qt/tlv_utils.h>
 #include <keycard-qt/metadata_utils.h>
@@ -17,9 +19,6 @@
 #include <QtConcurrent/QtConcurrent>
 
 #ifdef KEYCARD_QT_HAS_OPENSSL
-#include <openssl/ec.h>
-#include <openssl/bn.h>
-#include <openssl/obj_mac.h>
 #include <openssl/evp.h>
 #include <openssl/sha.h>
 #endif
@@ -29,14 +28,6 @@ namespace StatusKeycard {
 // LEB128 (Little Endian Base 128) encoding
 // Used for encoding wallet path components (matching Go's apdu.WriteLength)
 // NOTE: LEB128 utilities moved to metadata_utils.h/cpp for reuse across the codebase
-
-// Derivation paths matching status-keycard-go/internal/const.go
-static const QString PATH_MASTER = "m";
-static const QString PATH_WALLET_ROOT = "m/44'/60'/0'/0";
-static const QString PATH_WALLET = "m/44'/60'/0'/0/0";
-static const QString PATH_EIP1581 = "m/43'/60'/1581'";
-static const QString PATH_WHISPER = "m/43'/60'/1581'/0'/0";
-static const QString PATH_ENCRYPTION = "m/43'/60'/1581'/1'/0";
 
 SessionManager::SessionManager(QObject* parent)
     : QObject(parent)
@@ -611,74 +602,6 @@ bool SessionManager::factoryReset()
 // NOTE: TLV parsing functions moved to tlv_utils.h/cpp
 // All TLV operations now use Keycard::TLV:: utilities
 
-// Compute Ethereum address from public key using Qt's QCryptographicHash
-static QString publicKeyToAddress(const QByteArray& pubKey) {
-    if (pubKey.size() != 65 || pubKey[0] != 0x04) {
-        qWarning() << "Invalid public key format";
-        return QString();
-    }
-
-    // Remove 0x04 prefix, hash with Keccak-256, take last 20 bytes
-    QByteArray pubKeyData = pubKey.mid(1);
-    QByteArray hash = QCryptographicHash::hash(pubKeyData, QCryptographicHash::Keccak_256);
-    QByteArray address = hash.right(20);
-
-    return QString("0x") + address.toHex();
-}
-
-// Derive public key from private key using OpenSSL secp256k1
-static QByteArray derivePublicKeyFromPrivate(const QByteArray& privKey) {
-    if (privKey.size() != 32) {
-        qWarning() << "derivePublicKeyFromPrivate: Invalid private key size:" << privKey.size();
-        return QByteArray();
-    }
-
-    // Create EC_KEY for secp256k1
-    EC_KEY* eckey = EC_KEY_new_by_curve_name(NID_secp256k1);
-    if (!eckey) {
-        qWarning() << "derivePublicKeyFromPrivate: Failed to create EC_KEY";
-        return QByteArray();
-    }
-
-    // Set private key
-    BIGNUM* priv_bn = BN_bin2bn(reinterpret_cast<const unsigned char*>(privKey.data()), privKey.size(), nullptr);
-    if (!priv_bn || !EC_KEY_set_private_key(eckey, priv_bn)) {
-        qWarning() << "derivePublicKeyFromPrivate: Failed to set private key";
-        BN_free(priv_bn);
-        EC_KEY_free(eckey);
-        return QByteArray();
-    }
-
-    // Compute public key from private key
-    const EC_GROUP* group = EC_KEY_get0_group(eckey);
-    EC_POINT* pub_point = EC_POINT_new(group);
-    if (!EC_POINT_mul(group, pub_point, priv_bn, nullptr, nullptr, nullptr)) {
-        qWarning() << "derivePublicKeyFromPrivate: Failed to compute public key";
-        BN_free(priv_bn);
-        EC_POINT_free(pub_point);
-        EC_KEY_free(eckey);
-        return QByteArray();
-    }
-
-    EC_KEY_set_public_key(eckey, pub_point);
-
-    // Export public key in uncompressed format (0x04 + X + Y)
-    unsigned char pub_key_bytes[65];
-    size_t pub_key_len = EC_POINT_point2oct(group, pub_point, POINT_CONVERSION_UNCOMPRESSED,
-                                            pub_key_bytes, sizeof(pub_key_bytes), nullptr);
-
-    BN_free(priv_bn);
-    EC_POINT_free(pub_point);
-    EC_KEY_free(eckey);
-
-    if (pub_key_len != 65) {
-        qWarning() << "derivePublicKeyFromPrivate: Invalid public key length:" << pub_key_len;
-        return QByteArray();
-    }
-
-    return QByteArray(reinterpret_cast<const char*>(pub_key_bytes), pub_key_len);
-}
-
 // Parse exported key TLV response
 static SessionManager::KeyPair parseExportedKey(const QByteArray& data) {
     SessionManager::KeyPair keyPair;
@@ -712,7 +635,7 @@ static SessionManager::KeyPair parseExportedKey(const QByteArray& data) {
     // If public key is missing but private key is present, derive it
     if (pubKey.isEmpty() && !privKey.isEmpty()) {
         qDebug() << "StatusKeycardQt::parseExportedKey: Deriving public key from private key";
-        pubKey = derivePublicKeyFromPrivate(privKey);
+        pubKey = CryptoUtils::derivePublicKeyFromPrivate(privKey);
         if (pubKey.isEmpty()) {
             qWarning() << "parseExportedKey: Failed to derive public key";
             return keyPair;
@@ -723,7 +646,7 @@ static SessionManager::KeyPair parseExportedKey(const QByteArray& data) {
     // Set public key and address
     if (!pubKey.isEmpty()) {
         keyPair.publicKey = pubKey.toHex();
-        keyPair.address = publicKeyToAddress(pubKey);
+        keyPair.address = CryptoUtils::publicKeyToAddress(pubKey);
     }
 
     // Find chain code (0x82) if available
@@ -815,8 +738,8 @@ SessionManager::LoginKeys SessionManager::exportLoginKeys(bool isMainCommand)
 
     // Export encryption private key FIRST (matching status-keycard-go order)
     // Note: makeCurrent=false for all paths except master "m" (matching status-keycard-go)
-    qDebug() << "StatusKeycardQt::SessionManager: Exporting encryption key from path:" << PATH_ENCRYPTION;
-    QByteArray encryptionData = exportKeyInternal(true, false, PATH_ENCRYPTION, Keycard::APDU::P2ExportKeyPrivateAndPublic);
+    qDebug() << "StatusKeycardQt::SessionManager: Exporting encryption key from path:" << PathEncryption;
+    QByteArray encryptionData = exportKeyInternal(true, false, PathEncryption, Keycard::APDU::P2ExportKeyPrivateAndPublic);
     if (encryptionData.isEmpty()) {
         setError(QString("Failed to export encryption key: %1").arg(m_lastError));
         return keys;
@@ -825,8 +748,8 @@ SessionManager::LoginKeys SessionManager::exportLoginKeys(bool isMainCommand)
     keys.encryptionPrivateKey = parseExportedKey(encryptionData);
 
     // Export whisper private key SECOND (matching status-keycard-go order)
-    qDebug() << "StatusKeycardQt::SessionManager: Exporting whisper key from path:" << PATH_WHISPER;
-    QByteArray whisperData = exportKeyInternal(true, false, PATH_WHISPER, Keycard::APDU::P2ExportKeyPrivateAndPublic);
+    qDebug() << "StatusKeycardQt::SessionManager: Exporting whisper key from path:" << PathWhisper;
+    QByteArray whisperData = exportKeyInternal(true, false, PathWhisper, Keycard::APDU::P2ExportKeyPrivateAndPublic);
     if (whisperData.isEmpty()) {
         setError(QString("Failed to export whisper key: %1").arg(m_lastError));
         return keys;
@@ -837,145 +760,6 @@ SessionManager::LoginKeys SessionManager::exportLoginKeys(bool isMainCommand)
     qDebug() << "StatusKeycardQt::SessionManager: Login keys exported successfully";
 
     return keys;
-}
-
-SessionManager::LoginKeys SessionManager::login(const QString& keyUid, const QString& pin, bool logEnabled, const QString& logFilePath)
-{
-    qDebug() << "StatusKeycardQt::SessionManager::login()";
-
-    // Stop any existing session to release the PCSC card handle
-    stop();
-
-    // Clear any previous error and cancel flag (after stop, which sets cancelled=true)
-    m_lastError.clear();
-    {
-        QMutexLocker locker(&m_cardReadyMutex);
-        m_compositeMethodCallCancelled = false;
-    }
-
-    if (!ensureKeycardCommunication()) {
-        return LoginKeys();
-    }
-
-    // Enable batch mode BEFORE starting detection so the NFC session stays alive
-    m_commMgr->startBatchOperations();
-    auto batchGuard = [this](void*) { m_commMgr->endBatchOperations(); };
-    std::unique_ptr<void, decltype(batchGuard)> guard(reinterpret_cast<void*>(1), batchGuard);
-
-    // Step 1: Start card detection
-    if (!start(logEnabled, logFilePath)) {
-        setError(QString("Failed to start: %1").arg(m_lastError));
-        return LoginKeys();
-    }
-
-    // Step 2: Wait for card to be ready (event-driven, no polling)
-    {
-        QMutexLocker locker(&m_cardReadyMutex);
-        while (m_state == SessionState::WaitingForCard && !m_compositeMethodCallCancelled) {
-            m_cardReadyCondition.wait(&m_cardReadyMutex);
-        }
-    }
-
-    if (m_compositeMethodCallCancelled) {
-        setError("Login cancelled");
-        return LoginKeys();
-    }
-
-    if (m_state != SessionState::Ready) {
-        setError(QString("Card not ready (state: %1)").arg(currentStateString()));
-        return LoginKeys();
-    }
-
-    auto status = getStatus();
-    if (!status.keycardInfo || !status.keycardInfo) {
-        setError("Keycard info not found");
-        return LoginKeys();
-    }
-
-    if (status.keycardInfo->keyUID != keyUid) {
-        setError("Keycard UID does not match the keyUid being tried to login with");
-        return LoginKeys();
-    }
-
-    // Step 3: Authorize with PIN (batch is already active)
-    QMutexLocker locker(&m_operationMutex);
-
-    if (!authorize(pin)) {
-        return LoginKeys();
-    }
-
-    // Step 4: Export login keys (not main command — batch is already open)
-    return exportLoginKeys(false);
-}
-
-SessionManager::RecoverKeys SessionManager::recover(const QString& pin, const QString& puk, const QString& pairingPassword,
-                                const QString& mnemonic, bool logEnabled, const QString& logFilePath)
-{
-    qDebug() << "StatusKeycardQt::SessionManager::recover()";
-
-    // Stop any existing session to release the PCSC card handle
-    stop();
-
-    // Clear any previous error and cancel flag (after stop, which sets cancelled=true)
-    m_lastError.clear();
-    {
-        QMutexLocker locker(&m_cardReadyMutex);
-        m_compositeMethodCallCancelled = false;
-    }
-
-    if (!ensureKeycardCommunication()) {
-        return RecoverKeys();
-    }
-
-    // Enable batch mode BEFORE starting detection so the NFC session stays alive
-    m_commMgr->startBatchOperations();
-    auto batchGuard = [this](void*) { m_commMgr->endBatchOperations(); };
-    std::unique_ptr<void, decltype(batchGuard)> guard(reinterpret_cast<void*>(1), batchGuard);
-
-    // Step 1: Start card detection
-    if (!start(logEnabled, logFilePath)) {
-        setError(QString("Failed to start: %1").arg(m_lastError));
-        return RecoverKeys();
-    }
-
-    // Step 2: Wait for card to be ready (event-driven, no polling)
-    {
-        QMutexLocker locker(&m_cardReadyMutex);
-        while (m_state == SessionState::WaitingForCard && !m_compositeMethodCallCancelled) {
-            m_cardReadyCondition.wait(&m_cardReadyMutex);
-        }
-    }
-
-    if (m_compositeMethodCallCancelled) {
-        setError("Recover cancelled");
-        return RecoverKeys();
-    }
-
-    // Step 3: Factory reset (works from any card state)
-    if (!factoryReset()) {
-        return RecoverKeys();
-    }
-
-    // Step 4: Initialize card with new PIN and PUK
-    if (!initialize(pin, puk, pairingPassword)) {
-        return RecoverKeys();
-    }
-
-    // Step 5: Authorize with PIN (batch already active — same NFC session)
-    QMutexLocker locker(&m_operationMutex);
-
-    if (!authorize(pin)) {
-        return RecoverKeys();
-    }
-
-    // Step 6: Load mnemonic onto the card
-    QString keyUID = loadMnemonic(mnemonic, QString());
-    if (keyUID.isEmpty()) {
-        return RecoverKeys();
-    }
-
-    // Step 7: Export recover keys (not main command — batch already open)
-    return exportRecoverKeys(false);
 }
 
 SessionManager::RecoverKeys SessionManager::exportRecoverKeys(bool isMainCommand)
@@ -1015,7 +799,7 @@ SessionManager::RecoverKeys SessionManager::exportRecoverKeys(bool isMainCommand
     }
 
     // Export EIP1581 key (public only)
-    QByteArray eip1581Data = exportKeyInternal(true, false, PATH_EIP1581, Keycard::APDU::P2ExportKeyPublicOnly);
+    QByteArray eip1581Data = exportKeyInternal(true, false, PathEip1581, Keycard::APDU::P2ExportKeyPublicOnly);
     if (eip1581Data.isEmpty()) {
         setError(QString("Failed to export EIP1581 key: %1").arg(m_lastError));
         return keys;
@@ -1026,8 +810,8 @@ SessionManager::RecoverKeys SessionManager::exportRecoverKeys(bool isMainCommand
     // Check if card supports extended keys (version >= 3.1)
     bool supportsExtended = m_appInfo.appVersion >= 3 && m_appInfo.appVersionMinor >= 1;
     QByteArray walletRootData = supportsExtended ?
-        exportKeyExtendedInternal(true, false, PATH_WALLET_ROOT) :
-        exportKeyInternal(true, false, PATH_WALLET_ROOT, Keycard::APDU::P2ExportKeyPublicOnly);
+        exportKeyExtendedInternal(true, false, PathWalletRoot) :
+        exportKeyInternal(true, false, PathWalletRoot, Keycard::APDU::P2ExportKeyPublicOnly);
 
     if (walletRootData.isEmpty()) {
         setError(QString("Failed to export wallet root key: %1").arg(m_lastError));
@@ -1036,7 +820,7 @@ SessionManager::RecoverKeys SessionManager::exportRecoverKeys(bool isMainCommand
     keys.walletRootKey = parseExportedKey(walletRootData);
 
     // Export wallet key (public only)
-    QByteArray walletData = exportKeyInternal(true, false, PATH_WALLET, Keycard::APDU::P2ExportKeyPublicOnly);
+    QByteArray walletData = exportKeyInternal(true, false, PathWallet, Keycard::APDU::P2ExportKeyPublicOnly);
     if (walletData.isEmpty()) {
         setError(QString("Failed to export wallet key: %1").arg(m_lastError));
         return keys;
@@ -1044,7 +828,7 @@ SessionManager::RecoverKeys SessionManager::exportRecoverKeys(bool isMainCommand
     keys.walletKey = parseExportedKey(walletData);
 
     // Export master key (public only, derive=false since "m" doesn't need derivation)
-    QByteArray masterData = exportKeyInternal(false, false, PATH_MASTER, Keycard::APDU::P2ExportKeyPublicOnly);
+    QByteArray masterData = exportKeyInternal(false, false, PathMaster, Keycard::APDU::P2ExportKeyPublicOnly);
     if (masterData.isEmpty()) {
         setError(QString("Failed to export master key: %1").arg(m_lastError));
         return keys;
@@ -1156,7 +940,7 @@ SessionManager::Metadata SessionManager::getMetadata(bool isMainCommand)
         // Add all paths in range [start, start+count]
         // Expand to full paths like Go's ToMetadata() does
         for (uint32_t i = start; i <= start + count; ++i) {
-            QString walletPath = PATH_WALLET_ROOT + QString("/%1").arg(i);
+            QString walletPath = PathWalletRoot + QString("/%1").arg(i);
             Wallet wallet;
             wallet.path = walletPath;
             // Note: address and publicKey are left empty (not resolved)

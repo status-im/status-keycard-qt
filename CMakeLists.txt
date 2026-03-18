@@ -83,10 +83,13 @@ set(KEYCARD_QT_DIR "${keycard-qt_SOURCE_DIR}")
 # Library sources
 set(SOURCES
     src/c_api.cpp
+    src/utils/crypto_utils.cpp
     src/session/session_manager.cpp
+    src/session/session_composite_operations.cpp
     src/storage/file_pairing_storage.cpp
     src/signal_manager.cpp
     src/rpc/rpc_service.cpp
+    src/rpc/rpc_composite_handlers.cpp
     # Flow API
     src/flow/flow_signals.cpp
     src/flow/flow_state_machine.cpp
