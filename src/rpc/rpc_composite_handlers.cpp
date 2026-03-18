@@ -77,4 +77,42 @@ QJsonObject RpcService::handleRecover(quint64 id, const QJsonObject& params) {
     return createSuccessResponse(id, recoverKeysToJson(keys));
 }
 
+QJsonObject RpcService::handleExportExtendedPublicKey(quint64 id, const QJsonObject& params) {
+    QString storagePath = params["storageFilePath"].toString();
+    QString pin = params["pin"].toString();
+    QString path = params["path"].toString();
+    bool logEnabled = params["logEnabled"].toBool(false);
+    QString logFilePath = params["logFilePath"].toString();
+
+    if (storagePath.isEmpty()) {
+        return createErrorResponse(id, -32602, "Missing required parameter: storageFilePath");
+    }
+
+    if (pin.length() != PinLength) {
+        return createErrorResponse(id, -32602, "PIN must be " + QString::number(PinLength) + " digits");
+    }
+
+    if (path.isEmpty()) {
+        return createErrorResponse(id, -32602, "Missing required parameter: path");
+    }
+
+    QJsonObject validationError = validateAndConfigureStorage(id, storagePath);
+    if (!validationError.isEmpty()) {
+        return validationError;
+    }
+
+    SessionManager::ExtendedPublicKey key = m_sessionManager->exportExtendedPublicKey(pin, path, storagePath, logEnabled, logFilePath);
+    if (!m_sessionManager->lastError().isEmpty()) {
+        return createErrorResponse(id, -32000, m_sessionManager->lastError());
+    }
+
+    QJsonObject keyObj;
+    keyObj["address"] = key.address;
+    keyObj["publicKey"] = key.publicKey;
+    keyObj["chainCode"] = key.chainCode;
+    keyObj["xpub"] = key.xpub;
+
+    return createSuccessResponse(id, keyObj);
+}
+
 } // namespace StatusKeycard
