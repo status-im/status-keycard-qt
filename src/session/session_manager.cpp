@@ -1,5 +1,6 @@
 #include "session_manager.h"
 #include "signal_manager.h"
+#include "../utils/bip32_xpub_helpers.h"
 #include "../utils/constants.h"
 #include "../utils/crypto_utils.h"
 #include <keycard-qt/types.h>
@@ -838,6 +839,74 @@ SessionManager::RecoverKeys SessionManager::exportRecoverKeys(bool isMainCommand
     qDebug() << "StatusKeycardQt::SessionManager: Recover keys exported successfully";
 
     return keys;
+}
+
+SessionManager::ExtendedPublicKey SessionManager::exportExtendedPublicKey(const QString& path)
+{
+    ExtendedPublicKey epk;
+
+    if (!ensureAuthorized()) {
+        return epk;
+    }
+
+    bool supportsExtended = m_appInfo.appVersion >= 3 && m_appInfo.appVersionMinor >= 1;
+    bool isMaster = (path == "m");
+    bool derive = !isMaster;
+
+    // Export key at the requested path
+    QByteArray keyData = supportsExtended
+        ? exportKeyExtendedInternal(derive, isMaster, path)
+        : exportKeyInternal(derive, false, path, Keycard::APDU::P2ExportKeyPublicOnly);
+
+    if (keyData.isEmpty()) {
+        setError(QString("Failed to export extended public key at path %1: %2").arg(path, m_lastError));
+        return epk;
+    }
+
+    KeyPair kp = parseExportedKey(keyData);
+    epk.address = kp.address;
+    epk.publicKey = kp.publicKey;
+    epk.chainCode = kp.chainCode;
+
+    Bip32::PathInfo pathInfo = Bip32::parsePath(path);
+
+    QByteArray pubKeyRaw = QByteArray::fromHex(kp.publicKey.toLatin1());
+    QByteArray chainCodeRaw = QByteArray::fromHex(kp.chainCode.toLatin1());
+    QByteArray compressed = Bip32::compressPublicKey(pubKeyRaw);
+
+    // Compute parent fingerprint (HASH160 of compressed parent public key)
+    QByteArray parentFP(4, '\0');
+    if (pathInfo.depth > 0) {
+        bool parentIsMaster = (pathInfo.parentPath == "m");
+        bool parentDerive = !parentIsMaster;
+
+        QByteArray parentData = supportsExtended
+            ? exportKeyExtendedInternal(parentDerive, parentIsMaster, pathInfo.parentPath)
+            : exportKeyInternal(parentDerive, false, pathInfo.parentPath, Keycard::APDU::P2ExportKeyPublicOnly);
+
+        if (!parentData.isEmpty()) {
+            KeyPair parentKp = parseExportedKey(parentData);
+            QByteArray parentPubRaw = QByteArray::fromHex(parentKp.publicKey.toLatin1());
+            QByteArray parentCompressed = Bip32::compressPublicKey(parentPubRaw);
+            if (!parentCompressed.isEmpty()) {
+                parentFP = Bip32::hash160(parentCompressed).left(4);
+            }
+        }
+    }
+
+    uint32_t childIndex = pathInfo.childIndexes.isEmpty() ? 0 : pathInfo.childIndexes.last();
+
+    if (!compressed.isEmpty() && chainCodeRaw.size() >= 32) {
+        epk.xpub = Bip32::serializeXpub(
+            static_cast<uint8_t>(pathInfo.depth),
+            parentFP,
+            childIndex,
+            chainCodeRaw,
+            compressed
+        );
+    }
+
+    return epk;
 }
 
 // Metadata Operations Implementation

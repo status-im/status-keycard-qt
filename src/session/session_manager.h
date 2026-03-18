@@ -94,6 +94,16 @@ public:
     RecoverKeys recover(const QString& pin, const QString& puk, const QString& pairingPassword, const QString& mnemonic,
                         bool logEnabled = false, const QString& logFilePath = QString());
 
+    struct ExtendedPublicKey {
+        QString address;
+        QString publicKey;
+        QString chainCode;
+        QString xpub;       // Base58Check-encoded BIP32 extended public key
+    };
+    ExtendedPublicKey exportExtendedPublicKey(const QString& path);
+    ExtendedPublicKey exportExtendedPublicKey(const QString& pin, const QString& path, const QString& storageFilePath,
+        bool logEnabled = false, const QString& logFilePath = QString());
+
     // Status structures (matching status-keycard-go exactly)
     struct Wallet {
         QString path;

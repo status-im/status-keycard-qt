@@ -144,4 +144,58 @@ SessionManager::RecoverKeys SessionManager::recover(const QString& pin, const QS
     return exportRecoverKeys(false);
 }
 
+SessionManager::ExtendedPublicKey SessionManager::exportExtendedPublicKey(
+    const QString& pin, const QString& path, const QString& storageFilePath,
+    bool logEnabled, const QString& logFilePath)
+{
+    Q_UNUSED(storageFilePath);
+    qDebug() << "StatusKeycardQt::SessionManager::exportExtendedPublicKey() path:" << path;
+
+    stop();
+
+    m_lastError.clear();
+    {
+        QMutexLocker locker(&m_cardReadyMutex);
+        m_compositeMethodCallCancelled = false;
+    }
+
+    if (!ensureKeycardCommunication()) {
+        return ExtendedPublicKey();
+    }
+
+    m_commMgr->startBatchOperations();
+    auto batchGuard = [this](void*) { m_commMgr->endBatchOperations(); };
+    std::unique_ptr<void, decltype(batchGuard)> guard(reinterpret_cast<void*>(1), batchGuard);
+
+    if (!start(logEnabled, logFilePath)) {
+        setError(QString("Failed to start: %1").arg(m_lastError));
+        return ExtendedPublicKey();
+    }
+
+    {
+        QMutexLocker locker(&m_cardReadyMutex);
+        while (m_state == SessionState::WaitingForCard && !m_compositeMethodCallCancelled) {
+            m_cardReadyCondition.wait(&m_cardReadyMutex);
+        }
+    }
+
+    if (m_compositeMethodCallCancelled) {
+        setError("exportExtendedPublicKey cancelled");
+        return ExtendedPublicKey();
+    }
+
+    if (m_state != SessionState::Ready) {
+        setError(QString("Card not ready (state: %1)").arg(currentStateString()));
+        return ExtendedPublicKey();
+    }
+
+    QMutexLocker locker(&m_operationMutex);
+
+    if (!authorize(pin)) {
+        return ExtendedPublicKey();
+    }
+
+    return exportExtendedPublicKey(path);
+}
+
 } // namespace StatusKeycard
