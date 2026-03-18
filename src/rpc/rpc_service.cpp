@@ -10,6 +10,8 @@
 
 namespace StatusKeycard {
 
+    using HandlerFunction = QJsonObject (RpcService::*)(quint64, const QJsonObject&);
+
     const int PinLength = 6; // 6 digits
     const int PukLength = 12; // 12 digits
     const int KeyUidLengthWithout0x = 64; // 64 characters in hex, without 0x prefix
@@ -30,98 +32,104 @@ void RpcService::setCommunicationManager(std::shared_ptr<Keycard::ICommunication
     }
 }
 
+QJsonObject extractParams(const QJsonValue& paramsValue) {
+    // Params can be an array with a single object, or an empty array
+    if (paramsValue.isObject()) {
+        return paramsValue.toObject();
+    }
+
+    if (paramsValue.isArray()) {
+        const QJsonArray paramsArray = paramsValue.toArray();
+        if (!paramsArray.isEmpty() && paramsArray.first().isObject()) {
+            return paramsArray.first().toObject();
+        }
+    }
+
+    return {};
+}
+
+QString toCompactJson(const QJsonObject& obj) {
+    return QJsonDocument(obj).toJson(QJsonDocument::Compact);
+}
+
 QString RpcService::processRequest(const QString& requestJson) {
     // Parse the request
     QJsonParseError parseError;
     QJsonDocument doc = QJsonDocument::fromJson(requestJson.toUtf8(), &parseError);
 
     if (parseError.error != QJsonParseError::NoError) {
-        QJsonObject errorResp = createErrorResponse(
+        return toCompactJson(createErrorResponse(
             0,
             -32700,
             QString("Parse error: %1").arg(parseError.errorString())
-        );
-        return QJsonDocument(errorResp).toJson(QJsonDocument::Compact);
+        ));
     }
 
-    QJsonObject request = doc.object();
-    quint64 id = request["id"].toVariant().toULongLong();
-    QString method = request["method"].toString();
-    QJsonValue paramsValue = request["params"];
-    QJsonObject params;
-
-    // Params can be an array with a single object, or an empty array
-    if (paramsValue.isArray()) {
-        QJsonArray paramsArray = paramsValue.toArray();
-        if (!paramsArray.isEmpty()) {
-            params = paramsArray[0].toObject();
-        }
-    } else if (paramsValue.isObject()) {
-        params = paramsValue.toObject();
+    if (!doc.isObject()) {
+        return toCompactJson(createErrorResponse(
+            0,
+            -32600,
+            "Invalid Request: JSON-RPC request must be an object"
+        ));
     }
+
+    const QJsonObject request = doc.object();
+    const quint64 id = request.value("id").toVariant().toULongLong();
+    const QString method = request.value("method").toString();
+    const QJsonObject params = extractParams(request.value("params"));
 
     qDebug() << "StatusKeycardQt::RpcService::processRequest() id:" << id;
     qDebug() << "StatusKeycardQt::RpcService::processRequest() method:" << method;
-    qDebug() << "StatusKeycardQt::RpcService::processRequest() params:" << QJsonDocument(params).toJson(QJsonDocument::Compact);;
-
-    // Route to handler
-    QJsonObject response;
+    qDebug() << "StatusKeycardQt::RpcService::processRequest() params:" << toCompactJson(params);
 
     if (!m_commMgr) {
-        return QJsonDocument(createErrorResponse(id, -32000, "CommunicationManager not set")).toJson(QJsonDocument::Compact);
+        return toCompactJson(createErrorResponse(id, -32000, "CommunicationManager not set"));
     }
 
-    if (method == "keycard.Start") {
-        response = handleStart(id, params);
-        return QJsonDocument(response).toJson(QJsonDocument::Compact);
-    } else if (method == "keycard.Stop") {
-        response = handleStop(id, params);
-        return QJsonDocument(response).toJson(QJsonDocument::Compact);
-    } else if (method == "keycard.CancelCurrentOperation") {
-        response = handleCancelCurrentOperation(id, params);
-        return QJsonDocument(response).toJson(QJsonDocument::Compact);
-    }
+    const QHash<QString, HandlerFunction> lifeCycleHandlers = {
+        {"keycard.Start", &RpcService::handleStart},
+        {"keycard.Stop", &RpcService::handleStop},
+        {"keycard.CancelCurrentOperation", &RpcService::handleCancelCurrentOperation},
+    };
 
-    // Enable batch mode BEFORE starting detection so the NFC session stays alive
-    m_commMgr->startBatchOperations();
-    auto batchGuard = [this](void*) { m_commMgr->endBatchOperations(); };
-    std::unique_ptr<void, decltype(batchGuard)> guard(reinterpret_cast<void*>(1), batchGuard);
+    const QHash<QString, HandlerFunction> compositeHandlers = {
+        {"keycard.Login", &RpcService::handleLogin},
+        {"keycard.Recover", &RpcService::handleRecover},
+    };
 
-    if (method == "keycard.GetStatus") {
-        response = handleGetStatus(id, params);
-    } else if (method == "keycard.Initialize") {
-        response = handleInitialize(id, params);
-    } else if (method == "keycard.Authorize") {
-        response = handleAuthorize(id, params);
-    } else if (method == "keycard.ChangePIN") {
-        response = handleChangePIN(id, params);
-    } else if (method == "keycard.ChangePUK") {
-        response = handleChangePUK(id, params);
-    } else if (method == "keycard.Unblock") {
-        response = handleUnblock(id, params);
-    } else if (method == "keycard.GenerateMnemonic") {
-        response = handleGenerateMnemonic(id, params);
-    } else if (method == "keycard.LoadMnemonic") {
-        response = handleLoadMnemonic(id, params);
-    } else if (method == "keycard.FactoryReset") {
-        response = handleFactoryReset(id, params);
-    } else if (method == "keycard.GetMetadata") {
-        response = handleGetMetadata(id, params);
-    } else if (method == "keycard.StoreMetadata") {
-        response = handleStoreMetadata(id, params);
-    } else if (method == "keycard.ExportLoginKeys") {
-        response = handleExportLoginKeys(id, params);
-    } else if (method == "keycard.ExportRecoverKeys") {
-        response = handleExportRecoverKeys(id, params);
-    } else if (method == "keycard.Login") {
-        response = handleLogin(id, params);
-    } else if (method == "keycard.Recover") {
-        response = handleRecover(id, params);
+    const QHash<QString, HandlerFunction> singleStepHandlers = {
+        {"keycard.GetStatus", &RpcService::handleGetStatus},
+        {"keycard.Initialize", &RpcService::handleInitialize},
+        {"keycard.Authorize", &RpcService::handleAuthorize},
+        {"keycard.ChangePIN", &RpcService::handleChangePIN},
+        {"keycard.ChangePUK", &RpcService::handleChangePUK},
+        {"keycard.Unblock", &RpcService::handleUnblock},
+        {"keycard.GenerateMnemonic", &RpcService::handleGenerateMnemonic},
+        {"keycard.LoadMnemonic", &RpcService::handleLoadMnemonic},
+        {"keycard.FactoryReset", &RpcService::handleFactoryReset},
+        {"keycard.GetMetadata", &RpcService::handleGetMetadata},
+        {"keycard.StoreMetadata", &RpcService::handleStoreMetadata},
+        {"keycard.ExportLoginKeys", &RpcService::handleExportLoginKeys},
+        {"keycard.ExportRecoverKeys", &RpcService::handleExportRecoverKeys},
+    };
+
+    QJsonObject response;
+    if (lifeCycleHandlers.contains(method)) {
+        response = (this->*lifeCycleHandlers[method])(id, params);
+    } else if (compositeHandlers.contains(method)) {
+        response = (this->*compositeHandlers[method])(id, params);
+    } else if (singleStepHandlers.contains(method)) {
+        // Enable batch mode BEFORE starting detection so the NFC session stays alive
+        m_commMgr->startBatchOperations();
+        auto batchGuard = [this](void*) { m_commMgr->endBatchOperations(); };
+        std::unique_ptr<void, decltype(batchGuard)> guard(reinterpret_cast<void*>(1), batchGuard);
+
+        response = (this->*singleStepHandlers[method])(id, params);
     } else {
-        response = createErrorResponse(id, -32601, QString("Method not found: %1").arg(method));
+        return toCompactJson(createErrorResponse(id, -32601, QString("Method not found: %1").arg(method)));
     }
 
-    return QJsonDocument(response).toJson(QJsonDocument::Compact);
+    return toCompactJson(response);
 }
 
 QJsonObject RpcService::createSuccessResponse(quint64 id, const QJsonValue& result) {
