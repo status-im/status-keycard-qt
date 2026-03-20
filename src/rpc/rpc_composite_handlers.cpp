@@ -79,6 +79,7 @@ QJsonObject RpcService::handleRecover(quint64 id, const QJsonObject& params) {
 
 QJsonObject RpcService::handleExportExtendedPublicKey(quint64 id, const QJsonObject& params) {
     QString storagePath = params["storageFilePath"].toString();
+    QString keyUid = params["keyUid"].toString();
     QString pin = params["pin"].toString();
     QString path = params["path"].toString();
     bool logEnabled = params["logEnabled"].toBool(false);
@@ -86,6 +87,11 @@ QJsonObject RpcService::handleExportExtendedPublicKey(quint64 id, const QJsonObj
 
     if (storagePath.isEmpty()) {
         return createErrorResponse(id, -32602, "Missing required parameter: storageFilePath");
+    }
+
+    const QString keyUidWithout0x = remove0xPrefix(keyUid);
+    if (keyUidWithout0x.length() != KeyUidLengthWithout0x) {
+        return createErrorResponse(id, -32602, "keyUid must be " + QString::number(KeyUidLengthWithout0x) + " characters in hex, without 0x prefix");
     }
 
     if (pin.length() != PinLength) {
@@ -101,7 +107,7 @@ QJsonObject RpcService::handleExportExtendedPublicKey(quint64 id, const QJsonObj
         return validationError;
     }
 
-    SessionManager::ExtendedPublicKey key = m_sessionManager->exportExtendedPublicKey(pin, path, storagePath, logEnabled, logFilePath);
+    SessionManager::ExtendedPublicKey key = m_sessionManager->exportExtendedPublicKey(keyUidWithout0x, pin, path, storagePath, logEnabled, logFilePath);
     if (!m_sessionManager->lastError().isEmpty()) {
         return createErrorResponse(id, -32000, m_sessionManager->lastError());
     }

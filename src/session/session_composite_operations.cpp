@@ -59,7 +59,7 @@ SessionManager::LoginKeys SessionManager::login(const QString& keyUid, const QSt
     }
 
     if (status.keycardInfo->keyUID != keyUid) {
-        setError("Keycard UID does not match the keyUid being tried to login with");
+        setError("Keycard profile does not match the profile (keyUid) being tried to login with");
         return LoginKeys();
     }
 
@@ -144,9 +144,8 @@ SessionManager::RecoverKeys SessionManager::recover(const QString& pin, const QS
     return exportRecoverKeys(false);
 }
 
-SessionManager::ExtendedPublicKey SessionManager::exportExtendedPublicKey(
-    const QString& pin, const QString& path, const QString& storageFilePath,
-    bool logEnabled, const QString& logFilePath)
+SessionManager::ExtendedPublicKey SessionManager::exportExtendedPublicKey(const QString& keyUid, const QString& pin,
+    const QString& path, const QString& storageFilePath, bool logEnabled, const QString& logFilePath)
 {
     Q_UNUSED(storageFilePath);
     qDebug() << "StatusKeycardQt::SessionManager::exportExtendedPublicKey() path:" << path;
@@ -186,6 +185,17 @@ SessionManager::ExtendedPublicKey SessionManager::exportExtendedPublicKey(
 
     if (m_state != SessionState::Ready) {
         setError(QString("Card not ready (state: %1)").arg(currentStateString()));
+        return ExtendedPublicKey();
+    }
+
+    auto status = getStatus();
+    if (!status.keycardInfo || !status.keycardInfo) {
+        setError("Keycard info not found");
+        return ExtendedPublicKey();
+    }
+
+    if (status.keycardInfo->keyUID != keyUid) {
+        setError("Keycard profile does not match the profile (keyUid) being tried to export extended public key for");
         return ExtendedPublicKey();
     }
 
