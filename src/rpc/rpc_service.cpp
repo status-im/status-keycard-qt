@@ -1,5 +1,6 @@
 #include "rpc_service.h"
 #include "../utils/constants.h"
+#include "../utils/common.h"
 #include "../session/session_manager.h"
 #include "../storage/file_pairing_storage.h"
 #include "keycard-qt/communication_manager.h"
@@ -237,14 +238,14 @@ QJsonObject RpcService::validateAndConfigureStorage(quint64 id, const QString& s
 
 QJsonObject RpcService::loginKeysToJson(const SessionManager::LoginKeys& keys) {
     QJsonObject whisperKey;
-    whisperKey["address"] = keys.whisperPrivateKey.address;
-    whisperKey["publicKey"] = keys.whisperPrivateKey.publicKey;
-    whisperKey["privateKey"] = keys.whisperPrivateKey.privateKey;
+    whisperKey["address"] = ensure0xPrefix(keys.whisperPrivateKey.address);
+    whisperKey["publicKey"] = ensure0xPrefix(keys.whisperPrivateKey.publicKey);
+    whisperKey["privateKey"] = ensure0xPrefix(keys.whisperPrivateKey.privateKey);
 
     QJsonObject encryptionKey;
-    encryptionKey["address"] = keys.encryptionPrivateKey.address;
-    encryptionKey["publicKey"] = keys.encryptionPrivateKey.publicKey;
-    encryptionKey["privateKey"] = keys.encryptionPrivateKey.privateKey;
+    encryptionKey["address"] = ensure0xPrefix(keys.encryptionPrivateKey.address);
+    encryptionKey["publicKey"] = ensure0xPrefix(keys.encryptionPrivateKey.publicKey);
+    encryptionKey["privateKey"] = ensure0xPrefix(keys.encryptionPrivateKey.privateKey);
 
     QJsonObject keysObject;
     keysObject["whisperPrivateKey"] = whisperKey;
@@ -257,16 +258,16 @@ QJsonObject RpcService::loginKeysToJson(const SessionManager::LoginKeys& keys) {
 }
 
 QJsonObject RpcService::recoverKeysToJson(const SessionManager::RecoverKeys& keys) {
-    // Helper to convert KeyPair to JSON
+    // Helper to convert KeyPair to JSON (hex values with 0x prefix)
     auto keyPairToJson = [](const SessionManager::KeyPair& kp) {
         QJsonObject obj;
-        obj["address"] = kp.address;
-        obj["publicKey"] = kp.publicKey;
+        obj["address"] = ensure0xPrefix(kp.address);
+        obj["publicKey"] = ensure0xPrefix(kp.publicKey);
         if (!kp.privateKey.isEmpty()) {
-            obj["privateKey"] = kp.privateKey;
+            obj["privateKey"] = ensure0xPrefix(kp.privateKey);
         }
         if (!kp.chainCode.isEmpty()) {
-            obj["chainCode"] = kp.chainCode;
+            obj["chainCode"] = ensure0xPrefix(kp.chainCode);
         }
         return obj;
     };
