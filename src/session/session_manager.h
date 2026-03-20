@@ -104,6 +104,21 @@ public:
     ExtendedPublicKey exportExtendedPublicKey(const QString& keyUid, const QString& pin, const QString& path,
         const QString& storageFilePath, bool logEnabled = false, const QString& logFilePath = QString());
 
+    struct ExportedKeyPair {
+        QString address;
+        QString publicKey;   // Hex with 0x prefix (matches ExportPublicFlow)
+        QString privateKey;  // Optional, hex with 0x prefix
+        QString chainCode;   // Optional, hex with 0x prefix
+    };
+    struct ExportPublicKeyResult {
+        QString masterKeyAddress;  // Empty if exportMasterAddress was false
+        QVector<ExportedKeyPair> exportedKeys;
+        bool inputWasArray;  // True if paths was array (affects result format)
+    };
+    ExportPublicKeyResult exportPublicKey(const QString& keyUid, const QString& pin, const QStringList& paths,
+        bool exportPrivate, bool exportMasterAddress, const QString& storageFilePath,
+        bool logEnabled = false, const QString& logFilePath = QString());
+
     // Status structures (matching status-keycard-go exactly)
     struct Wallet {
         QString path;
@@ -172,6 +187,7 @@ private:
     // Helper for exporting keys
     QByteArray exportKeyInternal(bool derive, bool makeCurrent, const QString& path, uint8_t exportType = 0x00);
     QByteArray exportKeyExtendedInternal(bool derive, bool makeCurrent, const QString& path);
+    ExportPublicKeyResult exportPublicKeyInternal(const QStringList& paths, bool exportPrivate, bool exportMasterAddress);
 
     // State
     SessionState m_state;

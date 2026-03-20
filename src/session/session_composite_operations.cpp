@@ -208,4 +208,69 @@ SessionManager::ExtendedPublicKey SessionManager::exportExtendedPublicKey(const 
     return exportExtendedPublicKey(path);
 }
 
+SessionManager::ExportPublicKeyResult SessionManager::exportPublicKey(const QString& keyUid, const QString& pin,
+    const QStringList& paths, bool exportPrivate, bool exportMasterAddress, const QString& storageFilePath,
+    bool logEnabled, const QString& logFilePath)
+{
+    Q_UNUSED(storageFilePath);
+    qDebug() << "StatusKeycardQt::SessionManager::exportPublicKey() paths:" << paths;
+
+    stop();
+
+    m_lastError.clear();
+    {
+        QMutexLocker locker(&m_cardReadyMutex);
+        m_compositeMethodCallCancelled = false;
+    }
+
+    if (!ensureKeycardCommunication()) {
+        return ExportPublicKeyResult();
+    }
+
+    m_commMgr->startBatchOperations();
+    auto batchGuard = [this](void*) { m_commMgr->endBatchOperations(); };
+    std::unique_ptr<void, decltype(batchGuard)> guard(reinterpret_cast<void*>(1), batchGuard);
+
+    if (!start(logEnabled, logFilePath)) {
+        setError(QString("Failed to start: %1").arg(m_lastError));
+        return ExportPublicKeyResult();
+    }
+
+    {
+        QMutexLocker locker(&m_cardReadyMutex);
+        while (m_state == SessionState::WaitingForCard && !m_compositeMethodCallCancelled) {
+            m_cardReadyCondition.wait(&m_cardReadyMutex);
+        }
+    }
+
+    if (m_compositeMethodCallCancelled) {
+        setError("exportPublicKey cancelled");
+        return ExportPublicKeyResult();
+    }
+
+    if (m_state != SessionState::Ready) {
+        setError(QString("Card not ready (state: %1)").arg(currentStateString()));
+        return ExportPublicKeyResult();
+    }
+
+    auto status = getStatus();
+    if (!status.keycardInfo || !status.keycardInfo) {
+        setError("Keycard info not found");
+        return ExportPublicKeyResult();
+    }
+
+    if (status.keycardInfo->keyUID != keyUid) {
+        setError("Keycard profile does not match the profile (keyUid) being tried to export public key for");
+        return ExportPublicKeyResult();
+    }
+
+    QMutexLocker locker(&m_operationMutex);
+
+    if (!authorize(pin)) {
+        return ExportPublicKeyResult();
+    }
+
+    return exportPublicKeyInternal(paths, exportPrivate, exportMasterAddress);
+}
+
 } // namespace StatusKeycard
