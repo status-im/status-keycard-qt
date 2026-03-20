@@ -3,6 +3,7 @@
 #include "../utils/common.h"
 #include "../session/session_manager.h"
 #include <QJsonObject>
+#include <QJsonArray>
 
 namespace StatusKeycard {
 
@@ -119,6 +120,100 @@ QJsonObject RpcService::handleExportExtendedPublicKey(quint64 id, const QJsonObj
     keyObj["xpub"] = key.xpub;
 
     return createSuccessResponse(id, keyObj);
+}
+
+// exports private key only if the derivation path is under `m/43'/60'/1581'/0'/` tree
+// in case of multiple derivation paths, the ordrer in the response is the same as the order in the input paths
+QJsonObject RpcService::handleExportPublicKey(quint64 id, const QJsonObject& params) {
+    QString storagePath = params["storageFilePath"].toString();
+    QString keyUid = params["keyUid"].toString();
+    QString pin = params["pin"].toString();
+    bool exportPrivate = params["exportPrivate"].toBool(false);
+    bool exportMasterAddress = params["exportMasterAddress"].toBool(false);
+    bool logEnabled = params["logEnabled"].toBool(false);
+    QString logFilePath = params["logFilePath"].toString();
+
+    if (storagePath.isEmpty()) {
+        return createErrorResponse(id, -32602, "Missing required parameter: storageFilePath");
+    }
+
+    const QString keyUidWithout0x = remove0xPrefix(keyUid);
+    if (keyUidWithout0x.length() != KeyUidLengthWithout0x) {
+        return createErrorResponse(id, -32602, "keyUid must be " + QString::number(KeyUidLengthWithout0x) + " characters in hex, without 0x prefix");
+    }
+
+    if (pin.length() != PinLength) {
+        return createErrorResponse(id, -32602, "PIN must be " + QString::number(PinLength) + " digits");
+    }
+
+    QStringList paths;
+    bool inputWasArray = false;
+    if (params.contains("paths") && params["paths"].isArray()) {
+        inputWasArray = true;
+        const QJsonArray pathArray = params["paths"].toArray();
+        for (const QJsonValue& val : pathArray) {
+            paths.append(val.toString());
+        }
+    } else if (params.contains("path")) {
+        paths.append(params["path"].toString());
+    } else {
+        return createErrorResponse(id, -32602, "Missing required parameter: path or paths");
+    }
+
+    if (paths.isEmpty()) {
+        return createErrorResponse(id, -32602, "path or paths must not be empty");
+    }
+
+    QJsonObject validationError = validateAndConfigureStorage(id, storagePath);
+    if (!validationError.isEmpty()) {
+        return validationError;
+    }
+
+    SessionManager::ExportPublicKeyResult result = m_sessionManager->exportPublicKey(keyUidWithout0x, pin, paths,
+        exportPrivate, exportMasterAddress, storagePath, logEnabled, logFilePath);
+
+    if (!m_sessionManager->lastError().isEmpty()) {
+        return createErrorResponse(id, -32000, m_sessionManager->lastError());
+    }
+
+    QJsonObject response;
+    if (!result.masterKeyAddress.isEmpty()) {
+        response["masterKeyAddress"] = result.masterKeyAddress;
+    }
+    if (inputWasArray) {
+        QJsonArray exportedArray;
+        for (const auto& kp : result.exportedKeys) {
+            QJsonObject keyObj;
+            keyObj["address"] = kp.address;
+            keyObj["publicKey"] = kp.publicKey;
+            if (!kp.privateKey.isEmpty()) {
+                keyObj["privateKey"] = kp.privateKey;
+            }
+            if (!kp.chainCode.isEmpty()) {
+                keyObj["chainCode"] = kp.chainCode;
+            }
+            exportedArray.append(keyObj);
+        }
+        response["exportedKeys"] = exportedArray;
+    } else {
+        if (result.exportedKeys.isEmpty()) {
+            response["exportedKey"] = QJsonObject();
+        } else {
+            const auto& kp = result.exportedKeys.first();
+            QJsonObject keyObj;
+            keyObj["address"] = kp.address;
+            keyObj["publicKey"] = kp.publicKey;
+            if (!kp.privateKey.isEmpty()) {
+                keyObj["privateKey"] = kp.privateKey;
+            }
+            if (!kp.chainCode.isEmpty()) {
+                keyObj["chainCode"] = kp.chainCode;
+            }
+            response["exportedKey"] = keyObj;
+        }
+    }
+
+    return createSuccessResponse(id, response);
 }
 
 } // namespace StatusKeycard

@@ -909,6 +909,57 @@ SessionManager::ExtendedPublicKey SessionManager::exportExtendedPublicKey(const 
     return epk;
 }
 
+SessionManager::ExportPublicKeyResult SessionManager::exportPublicKeyInternal(const QStringList& paths, bool exportPrivate,
+    bool exportMasterAddress)
+{
+    ExportPublicKeyResult result;
+    result.inputWasArray = (paths.size() != 1);
+
+    if (!ensureAuthorized()) {
+        return result;
+    }
+
+    const uint8_t exportType = exportPrivate
+        ? Keycard::APDU::P2ExportKeyPrivateAndPublic
+        : Keycard::APDU::P2ExportKeyPublicOnly;
+
+    if (exportMasterAddress) {
+        QByteArray masterData = exportKeyInternal(false, false, PathMaster, Keycard::APDU::P2ExportKeyPublicOnly);
+        if (masterData.isEmpty()) {
+            setError(QString("Failed to export master key: %1").arg(m_lastError));
+            return result;
+        }
+        KeyPair masterKp = parseExportedKey(masterData);
+        result.masterKeyAddress = masterKp.address;
+    }
+
+    for (const QString& path : paths) {
+        bool isMaster = (path == PathMaster);
+        bool derive = !isMaster;
+
+        QByteArray keyData = exportKeyInternal(derive, isMaster, path, exportType);
+        if (keyData.isEmpty()) {
+            setError(QString("Failed to export key at path %1: %2").arg(path, m_lastError));
+            return result;
+        }
+
+        KeyPair kp = parseExportedKey(keyData);
+
+        ExportedKeyPair exp;
+        exp.address = kp.address;
+        exp.publicKey = kp.publicKey.isEmpty() ? QString() : QString("0x") + kp.publicKey;
+        if (exportPrivate && !kp.privateKey.isEmpty()) {
+            exp.privateKey = QString("0x") + kp.privateKey;
+        }
+        if (!kp.chainCode.isEmpty()) {
+            exp.chainCode = QString("0x") + kp.chainCode;
+        }
+        result.exportedKeys.append(exp);
+    }
+
+    return result;
+}
+
 // Metadata Operations Implementation
 // These are defined here (after helper functions) to avoid forward declaration issues
 
