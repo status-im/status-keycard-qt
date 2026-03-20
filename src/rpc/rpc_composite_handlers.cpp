@@ -114,9 +114,9 @@ QJsonObject RpcService::handleExportExtendedPublicKey(quint64 id, const QJsonObj
     }
 
     QJsonObject keyObj;
-    keyObj["address"] = key.address;
-    keyObj["publicKey"] = key.publicKey;
-    keyObj["chainCode"] = key.chainCode;
+    keyObj["address"] = ensure0xPrefix(key.address);
+    keyObj["publicKey"] = ensure0xPrefix(key.publicKey);
+    keyObj["chainCode"] = ensure0xPrefix(key.chainCode);
     keyObj["xpub"] = key.xpub;
 
     return createSuccessResponse(id, keyObj);
@@ -178,19 +178,19 @@ QJsonObject RpcService::handleExportPublicKey(quint64 id, const QJsonObject& par
 
     QJsonObject response;
     if (!result.masterKeyAddress.isEmpty()) {
-        response["masterKeyAddress"] = result.masterKeyAddress;
+        response["masterKeyAddress"] = ensure0xPrefix(result.masterKeyAddress);
     }
     if (inputWasArray) {
         QJsonArray exportedArray;
         for (const auto& kp : result.exportedKeys) {
             QJsonObject keyObj;
-            keyObj["address"] = kp.address;
-            keyObj["publicKey"] = kp.publicKey;
+            keyObj["address"] = ensure0xPrefix(kp.address);
+            keyObj["publicKey"] = ensure0xPrefix(kp.publicKey);
             if (!kp.privateKey.isEmpty()) {
-                keyObj["privateKey"] = kp.privateKey;
+                keyObj["privateKey"] = ensure0xPrefix(kp.privateKey);
             }
             if (!kp.chainCode.isEmpty()) {
-                keyObj["chainCode"] = kp.chainCode;
+                keyObj["chainCode"] = ensure0xPrefix(kp.chainCode);
             }
             exportedArray.append(keyObj);
         }
@@ -201,13 +201,13 @@ QJsonObject RpcService::handleExportPublicKey(quint64 id, const QJsonObject& par
         } else {
             const auto& kp = result.exportedKeys.first();
             QJsonObject keyObj;
-            keyObj["address"] = kp.address;
-            keyObj["publicKey"] = kp.publicKey;
+            keyObj["address"] = ensure0xPrefix(kp.address);
+            keyObj["publicKey"] = ensure0xPrefix(kp.publicKey);
             if (!kp.privateKey.isEmpty()) {
-                keyObj["privateKey"] = kp.privateKey;
+                keyObj["privateKey"] = ensure0xPrefix(kp.privateKey);
             }
             if (!kp.chainCode.isEmpty()) {
-                keyObj["chainCode"] = kp.chainCode;
+                keyObj["chainCode"] = ensure0xPrefix(kp.chainCode);
             }
             response["exportedKey"] = keyObj;
         }
