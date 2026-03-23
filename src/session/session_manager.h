@@ -172,6 +172,7 @@ signals:
 public slots:
     void onCardInitialized(const Keycard::CardInitializationResult& result);
     void onCardRemoved();
+    void onReaderAvailabilityChanged(bool available);
 
 private:
     void setState(SessionState newState);

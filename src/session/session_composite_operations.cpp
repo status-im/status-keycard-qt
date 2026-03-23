@@ -37,7 +37,8 @@ SessionManager::LoginKeys SessionManager::login(const QString& keyUid, const QSt
     // Step 2: Wait for card to be ready (event-driven, no polling)
     {
         QMutexLocker locker(&m_cardReadyMutex);
-        while (m_state == SessionState::WaitingForCard && !m_compositeMethodCallCancelled) {
+        while ((m_state == SessionState::WaitingForCard || m_state == SessionState::WaitingForReader)
+               && !m_compositeMethodCallCancelled) {
             m_cardReadyCondition.wait(&m_cardReadyMutex);
         }
     }
@@ -107,7 +108,8 @@ SessionManager::RecoverKeys SessionManager::recover(const QString& pin, const QS
     // Step 2: Wait for card to be ready (event-driven, no polling)
     {
         QMutexLocker locker(&m_cardReadyMutex);
-        while (m_state == SessionState::WaitingForCard && !m_compositeMethodCallCancelled) {
+        while ((m_state == SessionState::WaitingForCard || m_state == SessionState::WaitingForReader)
+               && !m_compositeMethodCallCancelled) {
             m_cardReadyCondition.wait(&m_cardReadyMutex);
         }
     }
@@ -173,7 +175,8 @@ SessionManager::ExtendedPublicKey SessionManager::exportExtendedPublicKey(const 
 
     {
         QMutexLocker locker(&m_cardReadyMutex);
-        while (m_state == SessionState::WaitingForCard && !m_compositeMethodCallCancelled) {
+        while ((m_state == SessionState::WaitingForCard || m_state == SessionState::WaitingForReader)
+               && !m_compositeMethodCallCancelled) {
             m_cardReadyCondition.wait(&m_cardReadyMutex);
         }
     }
@@ -238,7 +241,8 @@ SessionManager::ExportPublicKeyResult SessionManager::exportPublicKey(const QStr
 
     {
         QMutexLocker locker(&m_cardReadyMutex);
-        while (m_state == SessionState::WaitingForCard && !m_compositeMethodCallCancelled) {
+        while ((m_state == SessionState::WaitingForCard || m_state == SessionState::WaitingForReader)
+               && !m_compositeMethodCallCancelled) {
             m_cardReadyCondition.wait(&m_cardReadyMutex);
         }
     }

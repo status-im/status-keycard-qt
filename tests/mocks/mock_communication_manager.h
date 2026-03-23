@@ -44,10 +44,20 @@ public:
     
     /**
      * @brief Simulate card removal
-     * 
+     *
      * This will emit cardLost signal asynchronously.
      */
     void simulateCardRemoved();
+
+    /**
+     * @brief Simulate reader availability change (PC/SC reader plugged/unplugged)
+     * @param available true if reader is present, false if removed
+     *
+     * Note: In the real implementation, readerAvailabilityChanged comes from the
+     * KeycardChannel, not ICommunicationManager. The mock exposes this for convenience;
+     * tests connect SessionManager::onReaderAvailabilityChanged directly.
+     */
+    void simulateReaderAvailabilityChanged(bool available);
     
     /**
      * @brief Set mock application info to be returned
