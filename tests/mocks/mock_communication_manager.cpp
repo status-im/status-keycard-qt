@@ -66,6 +66,14 @@ void MockCommunicationManager::simulateCardRemoved()
     emit cardLost();
 }
 
+void MockCommunicationManager::simulateReaderAvailabilityChanged(bool available)
+{
+    qDebug() << "StatusKeycardQt::[MockCommunicationManager] Simulating reader availability changed:" << available;
+    // In the real stack, this signal comes from KeycardChannel.
+    // For mock testing, call SessionManager::onReaderAvailabilityChanged directly.
+    Q_UNUSED(available);
+}
+
 void MockCommunicationManager::setMockApplicationInfo(const Keycard::ApplicationInfo& info)
 {
     m_mockAppInfo = info;

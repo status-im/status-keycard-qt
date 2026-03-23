@@ -100,14 +100,32 @@ bool SessionManager::start(bool logEnabled, const QString& logFilePath)
             this, [this]() { setState(SessionState::Cancelled); },
             Qt::AutoConnection);
 
+#if !defined(Q_OS_ANDROID) && !defined(Q_OS_IOS)
+    if (auto cmdSet = m_commMgr->commandSet()) {
+        if (auto ch = cmdSet->channel()) {
+            connect(ch.get(), &Keycard::KeycardChannel::readerAvailabilityChanged,
+                    this, &SessionManager::onReaderAvailabilityChanged,
+                    Qt::AutoConnection);
+        }
+    }
+#endif
+
+    // Mark as started before startDetection(), because detection may emit
+    // readerAvailabilityChanged synchronously and the slot needs m_started == true.
+    m_started = true;
+
     // Start card detection (CommunicationManager should already be init'd by caller)
     if (!m_commMgr->startDetection()) {
         qWarning() << "SessionManager: Failed to start card detection";
+        m_started = false;
         return false;
     }
 
-    setState(SessionState::WaitingForCard);
-    m_started = true;
+    // Only set WaitingForCard if a reader-availability signal hasn't already
+    // moved us to a more specific state (e.g. WaitingForReader).
+    if (m_state == SessionState::UnknownReaderState) {
+        setState(SessionState::WaitingForCard);
+    }
 
     qDebug() << "StatusKeycardQt::SessionManager: Started successfully, monitoring for cards";
     return true;
@@ -132,6 +150,14 @@ void SessionManager::stop()
     if (m_commMgr) {
         // Disconnect from CommunicationManager signals so SessionManager doesn't react to card events anymore
         QObject::disconnect(m_commMgr.get(), nullptr, this, nullptr);
+
+        // Also disconnect from the channel's readerAvailabilityChanged signal
+        if (auto cmdSet = m_commMgr->commandSet()) {
+            if (auto ch = cmdSet->channel()) {
+                QObject::disconnect(ch.get(), nullptr, this, nullptr);
+            }
+        }
+
         m_commMgr->stopDetection();
     }
 
@@ -210,9 +236,34 @@ void SessionManager::onCardRemoved()
     m_currentCardUID.clear();
 
     if (m_started) {
-        setState(SessionState::WaitingForCard);
+        // If the reader was already marked as unavailable, the reader itself was removed
+        // (onReaderAvailabilityChanged already set the appropriate state).
+        // Only transition to WaitingForCard if the reader is still present.
+        if (m_state != SessionState::WaitingForReader) {
+            setState(SessionState::WaitingForCard);
+        }
     }
 #endif
+}
+
+void SessionManager::onReaderAvailabilityChanged(bool available)
+{
+    qDebug() << "StatusKeycardQt::========================================";
+    qDebug() << "StatusKeycardQt::SessionManager: READER AVAILABILITY CHANGED -" << (available ? "available" : "removed");
+    qDebug() << "StatusKeycardQt::========================================";
+
+    if (!m_started) {
+        return;
+    }
+
+    if (!available) {
+        m_currentCardUID.clear();
+        setState(SessionState::WaitingForReader);
+    } else {
+        if (m_state == SessionState::WaitingForReader) {
+            setState(SessionState::WaitingForCard);
+        }
+    }
 }
 
 void SessionManager::setError(const QString& error)
