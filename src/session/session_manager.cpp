@@ -106,6 +106,11 @@ bool SessionManager::start(bool logEnabled, const QString& logFilePath)
             connect(ch.get(), &Keycard::KeycardChannel::readerAvailabilityChanged,
                     this, &SessionManager::onReaderAvailabilityChanged,
                     Qt::AutoConnection);
+
+            // Connect channel error signal for PCSC connection failures
+            connect(ch.get(), &Keycard::KeycardChannel::error,
+                    this, &SessionManager::onChannelError,
+                    Qt::AutoConnection);
         }
     }
 #endif
@@ -198,7 +203,11 @@ void SessionManager::onCardInitialized(const Keycard::CardInitializationResult& 
 
     if (!result.success) {
         qWarning() << "SessionManager: Card initialization failed:" << result.error;
-        if (result.appInfo.availableSlots == 0) {
+        // Only set NotKeycard when SELECT applet specifically failed.
+        // CardInitializationResult::fromError() creates default/empty appInfo (don't check result.appInfo.installed).
+        if (result.error.contains("Failed to select applet")) {
+            setState(SessionState::NotKeycard);
+        } else if (result.appInfo.availableSlots == 0 && !result.appInfo.instanceUID.isEmpty()) {
             setState(SessionState::NoAvailablePairingSlots);
         } else {
             setState(SessionState::ConnectionError);
@@ -264,6 +273,20 @@ void SessionManager::onReaderAvailabilityChanged(bool available)
             setState(SessionState::WaitingForCard);
         }
     }
+}
+
+void SessionManager::onChannelError(const QString& errorMsg)
+{
+    qDebug() << "StatusKeycardQt::========================================";
+    qDebug() << "StatusKeycardQt::SessionManager: CHANNEL ERROR:" << errorMsg;
+    qDebug() << "StatusKeycardQt::========================================";
+
+    if (!m_started) {
+        return;
+    }
+
+    setState(SessionState::ConnectionError);
+    setError(errorMsg);
 }
 
 void SessionManager::setError(const QString& error)

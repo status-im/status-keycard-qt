@@ -173,6 +173,7 @@ public slots:
     void onCardInitialized(const Keycard::CardInitializationResult& result);
     void onCardRemoved();
     void onReaderAvailabilityChanged(bool available);
+    void onChannelError(const QString& errorMsg);
 
 private:
     void setState(SessionState newState);
