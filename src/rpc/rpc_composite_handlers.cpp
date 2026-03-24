@@ -1,4 +1,5 @@
 #include "rpc_service.h"
+#include "../signal_manager.h"
 #include "../utils/constants.h"
 #include "../utils/common.h"
 #include "../session/session_manager.h"
@@ -33,6 +34,7 @@ QJsonObject RpcService::handleLogin(quint64 id, const QJsonObject& params) {
     }
 
     SessionManager::LoginKeys keys = m_sessionManager->login(keyUidWithout0x, pin, logEnabled, logFilePath);
+    SignalManager::instance()->emitStatusChanged(m_sessionManager->getStatus());
     if (!m_sessionManager->lastError().isEmpty()) {
         return createErrorResponse(id, -32000, m_sessionManager->lastError());
     }
@@ -71,6 +73,7 @@ QJsonObject RpcService::handleRecover(quint64 id, const QJsonObject& params) {
     }
 
     SessionManager::RecoverKeys keys = m_sessionManager->recover(pin, puk, pairingPassword, mnemonic, logEnabled, logFilePath);
+    SignalManager::instance()->emitStatusChanged(m_sessionManager->getStatus());
     if (!m_sessionManager->lastError().isEmpty()) {
         return createErrorResponse(id, -32000, m_sessionManager->lastError());
     }
@@ -109,6 +112,7 @@ QJsonObject RpcService::handleExportExtendedPublicKey(quint64 id, const QJsonObj
     }
 
     SessionManager::ExtendedPublicKey key = m_sessionManager->exportExtendedPublicKey(keyUidWithout0x, pin, path, storagePath, logEnabled, logFilePath);
+    SignalManager::instance()->emitStatusChanged(m_sessionManager->getStatus());
     if (!m_sessionManager->lastError().isEmpty()) {
         return createErrorResponse(id, -32000, m_sessionManager->lastError());
     }
@@ -171,7 +175,7 @@ QJsonObject RpcService::handleExportPublicKey(quint64 id, const QJsonObject& par
 
     SessionManager::ExportPublicKeyResult result = m_sessionManager->exportPublicKey(keyUidWithout0x, pin, paths,
         exportPrivate, exportMasterAddress, storagePath, logEnabled, logFilePath);
-
+    SignalManager::instance()->emitStatusChanged(m_sessionManager->getStatus());
     if (!m_sessionManager->lastError().isEmpty()) {
         return createErrorResponse(id, -32000, m_sessionManager->lastError());
     }
