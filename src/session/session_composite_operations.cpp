@@ -1,5 +1,6 @@
 #include "session_manager.h"
 #include <keycard-qt/i_communication_manager.h>
+#include <keycard-qt/command_set.h>
 #include <QDebug>
 #include <memory>
 
@@ -11,6 +12,11 @@ SessionManager::LoginKeys SessionManager::login(const QString& keyUid, const QSt
 
     // Stop any existing session to release the PCSC card handle
     stop();
+
+    // Clear cached authentication details.
+    if (m_commMgr && m_commMgr->commandSet()) {
+        m_commMgr->commandSet()->clearAuthenticationCache();
+    }
 
     // Clear any previous error and cancel flag (after stop, which sets cancelled=true)
     m_lastError.clear();
@@ -83,6 +89,11 @@ SessionManager::RecoverKeys SessionManager::recover(const QString& pin, const QS
     // Stop any existing session to release the PCSC card handle
     stop();
 
+    // Clear cached authentication details.
+    if (m_commMgr && m_commMgr->commandSet()) {
+        m_commMgr->commandSet()->clearAuthenticationCache();
+    }
+
     // Clear any previous error and cancel flag (after stop, which sets cancelled=true)
     m_lastError.clear();
     {
@@ -154,6 +165,11 @@ SessionManager::ExtendedPublicKey SessionManager::exportExtendedPublicKey(const 
 
     stop();
 
+    // Clear cached authentication details.
+    if (m_commMgr && m_commMgr->commandSet()) {
+        m_commMgr->commandSet()->clearAuthenticationCache();
+    }
+
     m_lastError.clear();
     {
         QMutexLocker locker(&m_cardReadyMutex);
@@ -219,6 +235,11 @@ SessionManager::ExportPublicKeyResult SessionManager::exportPublicKey(const QStr
     qDebug() << "StatusKeycardQt::SessionManager::exportPublicKey() paths:" << paths;
 
     stop();
+
+    // Clear cached authentication details.
+    if (m_commMgr && m_commMgr->commandSet()) {
+        m_commMgr->commandSet()->clearAuthenticationCache();
+    }
 
     m_lastError.clear();
     {
