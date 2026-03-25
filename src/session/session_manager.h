@@ -121,6 +121,8 @@ public:
 
     bool changeKeycardPIN(const QString& keyUid, const QString& pin, const QString& newPIN,
         const QString& storageFilePath, bool logEnabled = false, const QString& logFilePath = QString());
+    bool changeKeycardPUK(const QString& keyUid, const QString& pin, const QString& newPUK,
+        const QString& storageFilePath, bool logEnabled = false, const QString& logFilePath = QString());
     // Status structures (matching status-keycard-go exactly)
     struct Wallet {
         QString path;

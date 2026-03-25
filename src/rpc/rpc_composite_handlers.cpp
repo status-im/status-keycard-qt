@@ -258,4 +258,44 @@ QJsonObject RpcService::handleChangeKeycardPIN(quint64 id, const QJsonObject& pa
 
     return createSuccessResponse(id, QJsonObject());
 }
+
+QJsonObject RpcService::handleChangeKeycardPUK(quint64 id, const QJsonObject& params) {
+    QString storagePath = params["storageFilePath"].toString();
+    QString keyUid = params["keyUid"].toString();
+    QString pin = params["pin"].toString();
+    QString newPuk = params["newPuk"].toString();
+    bool logEnabled = params["logEnabled"].toBool(false);
+    QString logFilePath = params["logFilePath"].toString();
+
+    if (storagePath.isEmpty()) {
+        return createErrorResponse(id, -32602, "Missing required parameter: storageFilePath");
+    }
+
+    const QString keyUidWithout0x = remove0xPrefix(keyUid);
+    if (keyUidWithout0x.length() != KeyUidLengthWithout0x) {
+        return createErrorResponse(id, -32602, "keyUid must be " + QString::number(KeyUidLengthWithout0x) + " characters in hex, without 0x prefix");
+    }
+
+    if (pin.length() != PinLength) {
+        return createErrorResponse(id, -32602, "PIN must be " + QString::number(PinLength) + " digits");
+    }
+
+    if (newPuk.length() != PukLength) {
+        return createErrorResponse(id, -32602, "New PUK must be " + QString::number(PukLength) + " digits");
+    }
+
+    QJsonObject validationError = validateAndConfigureStorage(id, storagePath);
+    if (!validationError.isEmpty()) {
+        return validationError;
+    }
+
+    bool success = m_sessionManager->changeKeycardPUK(keyUidWithout0x, pin, newPuk, storagePath, logEnabled, logFilePath);
+    SignalManager::instance()->emitStatusChanged(m_sessionManager->getStatus());
+    if (!success) {
+        return createErrorResponse(id, -32000, m_sessionManager->lastError());
+    }
+
+    return createSuccessResponse(id, QJsonObject());
+}
+
 } // namespace StatusKeycard
