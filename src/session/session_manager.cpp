@@ -518,8 +518,8 @@ bool SessionManager::unblockPIN(const QString& puk, const QString& newPIN)
         return false;
     }
 
-    if (m_state != SessionState::Ready && m_state != SessionState::Authorized) {
-        setError("Card not ready");
+    if (m_state != SessionState::Ready && m_state != SessionState::Authorized && m_state != SessionState::BlockedPIN) {
+        setError("Card not ready (state: " + currentStateString() + ")");
         return false;
     }
 

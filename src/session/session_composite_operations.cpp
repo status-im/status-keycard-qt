@@ -414,4 +414,71 @@ bool SessionManager::changeKeycardPUK(const QString& keyUid, const QString& pin,
     return changePUK(newPUK);
 }
 
+bool SessionManager::unblockUsingPUK(const QString& keyUid, const QString& puk, const QString& newPIN,
+    const QString& storageFilePath, bool logEnabled, const QString& logFilePath)
+{
+    Q_UNUSED(storageFilePath);
+    qDebug() << "StatusKeycardQt::SessionManager::unblockUsingPUK()";
+
+    stop();
+
+    {
+        QMutexLocker locker(&m_cardReadyMutex);
+        m_compositeMethodCallCancelled = false;
+    }
+
+    if (!ensureKeycardCommunication()) {
+        return false;
+    }
+
+    m_commMgr->startBatchOperations();
+    auto batchGuard = [this](void*) { m_commMgr->endBatchOperations(); };
+    std::unique_ptr<void, decltype(batchGuard)> guard(reinterpret_cast<void*>(1), batchGuard);
+
+    if (!start(logEnabled, logFilePath)) {
+        setError(QString("Failed to start: %1").arg(m_lastError));
+        return false;
+    }
+
+    bool cancelled = false;
+    {
+        QMutexLocker locker(&m_cardReadyMutex);
+        while ((m_state == SessionState::WaitingForCard || m_state == SessionState::WaitingForReader)
+               && !m_compositeMethodCallCancelled) {
+            m_cardReadyCondition.wait(&m_cardReadyMutex);
+        }
+        cancelled = m_compositeMethodCallCancelled;
+    }
+
+    if (cancelled) {
+        setError("unblockUsingPUK cancelled");
+        return false;
+    }
+
+    if (m_state != SessionState::BlockedPIN) {
+        setError(QString("PIN is not blocked (state: %1)").arg(currentStateString()));
+        return false;
+    }
+
+    auto status = getStatus();
+    if (!status.keycardInfo) {
+        setError("Keycard info not found");
+        return false;
+    }
+
+    if (status.keycardInfo->keyUID != keyUid) {
+        setError("Keycard profile does not match the profile (keyUid) being tried to unblock");
+        return false;
+    }
+
+    QMutexLocker locker(&m_operationMutex);
+
+    const bool success = unblockPIN(puk, newPIN);
+
+    // Refresh status from card so keycardStatus reflects the updated PIN/PUK retry counts
+    updateAndPublishStatus(false);
+
+    return success;
+}
+
 } // namespace StatusKeycard
