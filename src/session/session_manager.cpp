@@ -207,7 +207,7 @@ void SessionManager::onCardInitialized(const Keycard::CardInitializationResult& 
         // CardInitializationResult::fromError() creates default/empty appInfo (don't check result.appInfo.installed).
         if (result.error.contains("Failed to select applet")) {
             setState(SessionState::NotKeycard);
-        } else if (result.appInfo.availableSlots == 0 && !result.appInfo.instanceUID.isEmpty()) {
+        } else if (result.error.contains("6A84") || result.error.contains("No available pairing slots")) {
             setState(SessionState::NoAvailablePairingSlots);
         } else {
             setState(SessionState::ConnectionError);
