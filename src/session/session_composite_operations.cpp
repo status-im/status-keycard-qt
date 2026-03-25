@@ -13,13 +13,7 @@ SessionManager::LoginKeys SessionManager::login(const QString& keyUid, const QSt
     // Stop any existing session to release the PCSC card handle
     stop();
 
-    // Clear cached authentication details.
-    if (m_commMgr && m_commMgr->commandSet()) {
-        m_commMgr->commandSet()->clearAuthenticationCache();
-    }
-
-    // Clear any previous error and cancel flag (after stop, which sets cancelled=true)
-    m_lastError.clear();
+    // Cancel composite method call flag (after stop, which sets cancelled=true)
     {
         QMutexLocker locker(&m_cardReadyMutex);
         m_compositeMethodCallCancelled = false;
@@ -41,15 +35,17 @@ SessionManager::LoginKeys SessionManager::login(const QString& keyUid, const QSt
     }
 
     // Step 2: Wait for card to be ready (event-driven, no polling)
+    bool cancelled = false;
     {
         QMutexLocker locker(&m_cardReadyMutex);
         while ((m_state == SessionState::WaitingForCard || m_state == SessionState::WaitingForReader)
                && !m_compositeMethodCallCancelled) {
             m_cardReadyCondition.wait(&m_cardReadyMutex);
         }
+        cancelled = m_compositeMethodCallCancelled;
     }
 
-    if (m_compositeMethodCallCancelled) {
+    if (cancelled) {
         setError("Login cancelled");
         return LoginKeys();
     }
@@ -89,13 +85,7 @@ SessionManager::RecoverKeys SessionManager::recover(const QString& pin, const QS
     // Stop any existing session to release the PCSC card handle
     stop();
 
-    // Clear cached authentication details.
-    if (m_commMgr && m_commMgr->commandSet()) {
-        m_commMgr->commandSet()->clearAuthenticationCache();
-    }
-
-    // Clear any previous error and cancel flag (after stop, which sets cancelled=true)
-    m_lastError.clear();
+    // Cancel composite method call flag (after stop, which sets cancelled=true)
     {
         QMutexLocker locker(&m_cardReadyMutex);
         m_compositeMethodCallCancelled = false;
@@ -117,15 +107,17 @@ SessionManager::RecoverKeys SessionManager::recover(const QString& pin, const QS
     }
 
     // Step 2: Wait for card to be ready (event-driven, no polling)
+    bool cancelled = false;
     {
         QMutexLocker locker(&m_cardReadyMutex);
         while ((m_state == SessionState::WaitingForCard || m_state == SessionState::WaitingForReader)
                && !m_compositeMethodCallCancelled) {
             m_cardReadyCondition.wait(&m_cardReadyMutex);
         }
+        cancelled = m_compositeMethodCallCancelled;
     }
 
-    if (m_compositeMethodCallCancelled) {
+    if (cancelled) {
         setError("Recover cancelled");
         return RecoverKeys();
     }
@@ -165,12 +157,6 @@ SessionManager::ExtendedPublicKey SessionManager::exportExtendedPublicKey(const 
 
     stop();
 
-    // Clear cached authentication details.
-    if (m_commMgr && m_commMgr->commandSet()) {
-        m_commMgr->commandSet()->clearAuthenticationCache();
-    }
-
-    m_lastError.clear();
     {
         QMutexLocker locker(&m_cardReadyMutex);
         m_compositeMethodCallCancelled = false;
@@ -189,15 +175,17 @@ SessionManager::ExtendedPublicKey SessionManager::exportExtendedPublicKey(const 
         return ExtendedPublicKey();
     }
 
+    bool cancelled = false;
     {
         QMutexLocker locker(&m_cardReadyMutex);
         while ((m_state == SessionState::WaitingForCard || m_state == SessionState::WaitingForReader)
                && !m_compositeMethodCallCancelled) {
             m_cardReadyCondition.wait(&m_cardReadyMutex);
         }
+        cancelled = m_compositeMethodCallCancelled;
     }
 
-    if (m_compositeMethodCallCancelled) {
+    if (cancelled) {
         setError("exportExtendedPublicKey cancelled");
         return ExtendedPublicKey();
     }
@@ -236,12 +224,6 @@ SessionManager::ExportPublicKeyResult SessionManager::exportPublicKey(const QStr
 
     stop();
 
-    // Clear cached authentication details.
-    if (m_commMgr && m_commMgr->commandSet()) {
-        m_commMgr->commandSet()->clearAuthenticationCache();
-    }
-
-    m_lastError.clear();
     {
         QMutexLocker locker(&m_cardReadyMutex);
         m_compositeMethodCallCancelled = false;
@@ -260,15 +242,17 @@ SessionManager::ExportPublicKeyResult SessionManager::exportPublicKey(const QStr
         return ExportPublicKeyResult();
     }
 
+    bool cancelled = false;
     {
         QMutexLocker locker(&m_cardReadyMutex);
         while ((m_state == SessionState::WaitingForCard || m_state == SessionState::WaitingForReader)
                && !m_compositeMethodCallCancelled) {
             m_cardReadyCondition.wait(&m_cardReadyMutex);
         }
+        cancelled = m_compositeMethodCallCancelled;
     }
 
-    if (m_compositeMethodCallCancelled) {
+    if (cancelled) {
         setError("exportPublicKey cancelled");
         return ExportPublicKeyResult();
     }
