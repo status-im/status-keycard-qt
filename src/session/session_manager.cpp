@@ -161,6 +161,8 @@ void SessionManager::stop()
             if (auto ch = cmdSet->channel()) {
                 QObject::disconnect(ch.get(), nullptr, this, nullptr);
             }
+
+            m_commMgr->commandSet()->handleCardSwap();
         }
 
         m_commMgr->stopDetection();
@@ -168,6 +170,11 @@ void SessionManager::stop()
 
     m_started = false;
     m_currentCardUID.clear();
+    m_appInfo = Keycard::ApplicationInfo();
+    m_appStatus = Keycard::ApplicationStatus();
+    m_metadata = Metadata();
+    m_authorized = false;
+    m_lastError.clear();
     setState(SessionState::UnknownReaderState);
 
     qDebug() << "StatusKeycardQt::SessionManager: Stopped (detection paused, can restart with start())";
