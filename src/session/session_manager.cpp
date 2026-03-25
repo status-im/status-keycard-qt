@@ -220,12 +220,12 @@ void SessionManager::onCardInitialized(const Keycard::CardInitializationResult& 
     if (!result.appInfo.initialized) {
         qDebug() << "StatusKeycardQt::SessionManager: Card is empty (not initialized)";
         setState(SessionState::EmptyKeycard);
-    } else if (m_appStatus.pinRetryCount == 0) {
-        qDebug() << "StatusKeycardQt::SessionManager: PIN is blocked";
-        setState(SessionState::BlockedPIN);
     } else if (m_appStatus.pukRetryCount == 0) {
         qDebug() << "StatusKeycardQt::SessionManager: PUK is blocked";
         setState(SessionState::BlockedPUK);
+    } else if (m_appStatus.pinRetryCount == 0) {
+        qDebug() << "StatusKeycardQt::SessionManager: PIN is blocked";
+        setState(SessionState::BlockedPIN);
     } else {
         qDebug() << "StatusKeycardQt::SessionManager: Card is ready";
         setState(SessionState::Ready);
@@ -340,10 +340,10 @@ void SessionManager::updateAndPublishStatus(bool authorized)
     }
 
     // Determine state based on updated status
-    if (m_appStatus.pinRetryCount == 0) {
-        setState(SessionState::BlockedPIN);
-    } else if (m_appStatus.pukRetryCount == 0) {
+    if (m_appStatus.pukRetryCount == 0) {
         setState(SessionState::BlockedPUK);
+    } else if (m_appStatus.pinRetryCount == 0) {
+        setState(SessionState::BlockedPIN);
     } else if (m_state == SessionState::Ready && authorized) {
         setState(SessionState::Authorized);
     } else {
