@@ -282,4 +282,70 @@ SessionManager::ExportPublicKeyResult SessionManager::exportPublicKey(const QStr
     return exportPublicKeyInternal(paths, exportPrivate, exportMasterAddress);
 }
 
+bool SessionManager::changeKeycardPIN(const QString& keyUid, const QString& pin, const QString& newPIN,
+    const QString& storageFilePath, bool logEnabled, const QString& logFilePath)
+{
+    Q_UNUSED(storageFilePath);
+    qDebug() << "StatusKeycardQt::SessionManager::changeKeycardPIN()";
+
+    stop();
+
+    {
+        QMutexLocker locker(&m_cardReadyMutex);
+        m_compositeMethodCallCancelled = false;
+    }
+
+    if (!ensureKeycardCommunication()) {
+        return false;
+    }
+
+    m_commMgr->startBatchOperations();
+    auto batchGuard = [this](void*) { m_commMgr->endBatchOperations(); };
+    std::unique_ptr<void, decltype(batchGuard)> guard(reinterpret_cast<void*>(1), batchGuard);
+
+    if (!start(logEnabled, logFilePath)) {
+        setError(QString("Failed to start: %1").arg(m_lastError));
+        return false;
+    }
+
+    bool cancelled = false;
+    {
+        QMutexLocker locker(&m_cardReadyMutex);
+        while ((m_state == SessionState::WaitingForCard || m_state == SessionState::WaitingForReader)
+               && !m_compositeMethodCallCancelled) {
+            m_cardReadyCondition.wait(&m_cardReadyMutex);
+        }
+        cancelled = m_compositeMethodCallCancelled;
+    }
+
+    if (cancelled) {
+        setError("changePIN cancelled");
+        return false;
+    }
+
+    if (m_state != SessionState::Ready) {
+        setError(QString("Card not ready (state: %1)").arg(currentStateString()));
+        return false;
+    }
+
+    auto status = getStatus();
+    if (!status.keycardInfo) {
+        setError("Keycard info not found");
+        return false;
+    }
+
+    if (status.keycardInfo->keyUID != keyUid) {
+        setError("Keycard profile does not match the profile (keyUid) being tried to change PIN for");
+        return false;
+    }
+
+    QMutexLocker locker(&m_operationMutex);
+
+    if (!authorize(pin)) {
+        return false;
+    }
+
+    return changePIN(newPIN);
+}
+
 } // namespace StatusKeycard

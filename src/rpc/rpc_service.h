@@ -102,6 +102,7 @@ private:
     QJsonObject handleRecover(quint64 id, const QJsonObject& params);
     QJsonObject handleExportExtendedPublicKey(quint64 id, const QJsonObject& params);
     QJsonObject handleExportPublicKey(quint64 id, const QJsonObject& params);
+    QJsonObject handleChangeKeycardPIN(quint64 id, const QJsonObject& params);
 
     std::unique_ptr<SessionManager> m_sessionManager;
     std::shared_ptr<Keycard::ICommunicationManager> m_commMgr;
