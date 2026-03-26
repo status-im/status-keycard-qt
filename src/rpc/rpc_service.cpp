@@ -98,6 +98,7 @@ QString RpcService::processRequest(const QString& requestJson) {
         {"keycard.ChangeKeycardPIN", &RpcService::handleChangeKeycardPIN},
         {"keycard.ChangeKeycardPUK", &RpcService::handleChangeKeycardPUK},
         {"keycard.UnblockUsingPUK", &RpcService::handleUnblockUsingPUK},
+        {"keycard.GetKeycardMetadata", &RpcService::handleGetKeycardMetadata},
     };
 
     const QHash<QString, HandlerFunction> singleStepHandlers = {

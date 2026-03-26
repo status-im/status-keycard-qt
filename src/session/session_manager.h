@@ -126,6 +126,9 @@ public:
     bool unblockUsingPUK(const QString& keyUid, const QString& puk, const QString& newPIN,
         const QString& storageFilePath, bool logEnabled = false, const QString& logFilePath = QString());
 
+    Metadata getKeycardMetadata(const QString& pin, const QString& storageFilePath, bool logEnabled = false,
+        const QString& logFilePath = QString());
+
     // Status structures (matching status-keycard-go exactly)
     struct Wallet {
         QString path;
@@ -197,6 +200,7 @@ private:
     QByteArray exportKeyInternal(bool derive, bool makeCurrent, const QString& path, uint8_t exportType = 0x00);
     QByteArray exportKeyExtendedInternal(bool derive, bool makeCurrent, const QString& path);
     ExportPublicKeyResult exportPublicKeyInternal(const QStringList& paths, bool exportPrivate, bool exportMasterAddress);
+    static KeyPair parseExportedKey(const QByteArray& data);
 
     // State
     SessionState m_state;

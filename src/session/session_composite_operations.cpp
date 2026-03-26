@@ -1,4 +1,5 @@
 #include "session_manager.h"
+#include "../utils/common.h"
 #include <keycard-qt/i_communication_manager.h>
 #include <keycard-qt/command_set.h>
 #include <QDebug>
@@ -479,6 +480,86 @@ bool SessionManager::unblockUsingPUK(const QString& keyUid, const QString& puk, 
     updateAndPublishStatus(false);
 
     return success;
+}
+
+SessionManager::Metadata SessionManager::getKeycardMetadata(const QString& pin, const QString& storageFilePath,
+    bool logEnabled, const QString& logFilePath)
+{
+    Q_UNUSED(storageFilePath);
+    qDebug() << "StatusKeycardQt::SessionManager::getKeycardMetadata()";
+
+    stop();
+
+    {
+        QMutexLocker locker(&m_cardReadyMutex);
+        m_compositeMethodCallCancelled = false;
+    }
+
+    if (!ensureKeycardCommunication()) {
+        return Metadata();
+    }
+
+    m_commMgr->startBatchOperations();
+    auto batchGuard = [this](void*) { m_commMgr->endBatchOperations(); };
+    std::unique_ptr<void, decltype(batchGuard)> guard(reinterpret_cast<void*>(1), batchGuard);
+
+    if (!start(logEnabled, logFilePath)) {
+        setError(QString("Failed to start: %1").arg(m_lastError));
+        return Metadata();
+    }
+
+    bool cancelled = false;
+    {
+        QMutexLocker locker(&m_cardReadyMutex);
+        while ((m_state == SessionState::WaitingForCard || m_state == SessionState::WaitingForReader)
+               && !m_compositeMethodCallCancelled) {
+            m_cardReadyCondition.wait(&m_cardReadyMutex);
+        }
+        cancelled = m_compositeMethodCallCancelled;
+    }
+
+    if (cancelled) {
+        setError("getKeycardMetadata cancelled");
+        return Metadata();
+    }
+
+    if (m_state != SessionState::Ready) {
+        setError(QString("Card not ready (state: %1)").arg(currentStateString()));
+        return Metadata();
+    }
+
+    QMutexLocker locker(&m_operationMutex);
+
+    const bool hasPin = !pin.isEmpty();
+
+    if (hasPin) {
+        if (!authorize(pin)) {
+            updateAndPublishStatus(false);
+            return Metadata();
+        }
+    }
+
+    // Fetch metadata from card (requires secure channel, which is established during card init)
+    m_metadata = getMetadata(true);
+
+    // If authorized and metadata has wallet paths, resolve address/publicKey for each
+    if (hasPin && !m_metadata.wallets.isEmpty()) {
+        for (int i = 0; i < m_metadata.wallets.size(); ++i) {
+            const QString& path = m_metadata.wallets[i].path;
+            QByteArray keyData = exportKeyInternal(true, false, path, Keycard::APDU::P2ExportKeyPublicOnly);
+            if (keyData.isEmpty()) {
+                qWarning() << "SessionManager::getKeycardMetadata: Failed to export key for path:" << path;
+                continue;
+            }
+            KeyPair kp = parseExportedKey(keyData);
+            m_metadata.wallets[i].address = ensure0xPrefix(kp.address);
+            m_metadata.wallets[i].publicKey = ensure0xPrefix(kp.publicKey);
+        }
+    }
+
+    updateAndPublishStatus(hasPin);
+
+    return m_metadata;
 }
 
 } // namespace StatusKeycard
