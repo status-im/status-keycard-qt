@@ -685,7 +685,7 @@ bool SessionManager::factoryReset()
 // All TLV operations now use Keycard::TLV:: utilities
 
 // Parse exported key TLV response
-static SessionManager::KeyPair parseExportedKey(const QByteArray& data) {
+SessionManager::KeyPair SessionManager::parseExportedKey(const QByteArray& data) {
     SessionManager::KeyPair keyPair;
 
     if (data.isEmpty()) {
