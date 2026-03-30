@@ -478,12 +478,7 @@ bool SessionManager::unblockUsingPUK(const QString& keyUid, const QString& puk, 
 
     QMutexLocker locker(&m_operationMutex);
 
-    const bool success = unblockPIN(puk, newPIN);
-
-    // Refresh status from card so keycardStatus reflects the updated PIN/PUK retry counts
-    updateAndPublishStatus(false);
-
-    return success;
+    return unblockPIN(puk, newPIN);
 }
 
 SessionManager::Metadata SessionManager::getKeycardMetadata(const QString& pin, const QString& storageFilePath,
@@ -538,7 +533,6 @@ SessionManager::Metadata SessionManager::getKeycardMetadata(const QString& pin, 
 
     if (hasPin) {
         if (!authorize(pin)) {
-            updateAndPublishStatus(false);
             return Metadata();
         }
     }
@@ -560,8 +554,6 @@ SessionManager::Metadata SessionManager::getKeycardMetadata(const QString& pin, 
             m_metadata.wallets[i].publicKey = ensure0xPrefix(kp.publicKey);
         }
     }
-
-    updateAndPublishStatus(hasPin);
 
     return m_metadata;
 }

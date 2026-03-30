@@ -351,6 +351,8 @@ void SessionManager::updateAndPublishStatus(bool authorized)
         setState(SessionState::BlockedPUK);
     } else if (m_appStatus.pinRetryCount == 0) {
         setState(SessionState::BlockedPIN);
+    } else if (m_state == SessionState::BlockedPIN) {
+        setState(SessionState::Ready);
     } else if (m_state == SessionState::Ready && authorized) {
         setState(SessionState::Authorized);
     } else {
@@ -531,13 +533,15 @@ bool SessionManager::unblockPIN(const QString& puk, const QString& newPIN)
         return false;
     }
 
+    updateAndPublishStatus(false);
+
     if (result.success) {
         qDebug() << "StatusKeycardQt::SessionManager: PIN unblocked";
         return true;
-    } else {
-        setError(result.error);
-        return false;
     }
+
+    setError(result.error);
+    return false;
 }
 
 // Key Operations
