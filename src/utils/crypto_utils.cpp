@@ -4,8 +4,10 @@
 
 #ifdef KEYCARD_QT_HAS_OPENSSL
 #include <openssl/ec.h>
+#include <openssl/ecdsa.h>
 #include <openssl/bn.h>
 #include <openssl/obj_mac.h>
+#include <openssl/evp.h>
 #endif
 
 namespace StatusKeycard::CryptoUtils {
@@ -74,6 +76,94 @@ QByteArray derivePublicKeyFromPrivate(const QByteArray& privKey) {
     Q_UNUSED(privKey);
     qWarning() << "derivePublicKeyFromPrivate: OpenSSL not available";
     return QByteArray();
+#endif
+}
+
+int calculateRecoveryId(const QByteArray& hash, const QByteArray& r, const QByteArray& s, const QByteArray& expectedPubKey)
+{
+#ifdef KEYCARD_QT_HAS_OPENSSL
+    if (hash.size() != 32 || r.size() != 32 || s.size() != 32 || expectedPubKey.size() != 65) {
+        return -1;
+    }
+
+    EC_KEY* eckey = EC_KEY_new_by_curve_name(NID_secp256k1);
+    if (!eckey) {
+        return -1;
+    }
+
+    const EC_GROUP* group = EC_KEY_get0_group(eckey);
+
+    EC_POINT* expected_point = EC_POINT_new(group);
+    if (!expected_point || !EC_POINT_oct2point(group, expected_point,
+            reinterpret_cast<const unsigned char*>(expectedPubKey.data()), 65, nullptr)) {
+        if (expected_point) EC_POINT_free(expected_point);
+        EC_KEY_free(eckey);
+        return -1;
+    }
+
+    BIGNUM* r_bn = BN_bin2bn(reinterpret_cast<const unsigned char*>(r.data()), 32, nullptr);
+    BN_CTX* ctx = BN_CTX_new();
+
+    int result = -1;
+
+    for (int rec_id = 0; rec_id <= 1; rec_id++) {
+        EC_POINT* R = EC_POINT_new(group);
+        if (!R) continue;
+
+        if (EC_POINT_set_compressed_coordinates(group, R, r_bn, rec_id, ctx) == 1) {
+            BIGNUM* s_bn = BN_bin2bn(reinterpret_cast<const unsigned char*>(s.data()), 32, nullptr);
+            BIGNUM* e_bn = BN_bin2bn(reinterpret_cast<const unsigned char*>(hash.data()), 32, nullptr);
+            BIGNUM* order = BN_new();
+            BIGNUM* r_inv = BN_new();
+
+            EC_GROUP_get_order(group, order, ctx);
+
+            if (BN_mod_inverse(r_inv, r_bn, order, ctx)) {
+                EC_POINT* sR = EC_POINT_new(group);
+                EC_POINT_mul(group, sR, nullptr, R, s_bn, ctx);
+
+                EC_POINT* eG = EC_POINT_new(group);
+                EC_POINT_mul(group, eG, e_bn, nullptr, nullptr, ctx);
+
+                EC_POINT_invert(group, eG, ctx);
+                EC_POINT_add(group, sR, sR, eG, ctx);
+
+                EC_POINT* Q = EC_POINT_new(group);
+                EC_POINT_mul(group, Q, nullptr, sR, r_inv, ctx);
+
+                if (EC_POINT_cmp(group, Q, expected_point, ctx) == 0) {
+                    result = rec_id;
+                }
+
+                EC_POINT_free(Q);
+                EC_POINT_free(eG);
+                EC_POINT_free(sR);
+            }
+
+            BN_free(r_inv);
+            BN_free(order);
+            BN_free(e_bn);
+            BN_free(s_bn);
+        }
+
+        EC_POINT_free(R);
+
+        if (result != -1) break;
+    }
+
+    BN_CTX_free(ctx);
+    BN_free(r_bn);
+    EC_POINT_free(expected_point);
+    EC_KEY_free(eckey);
+
+    return result;
+#else
+    Q_UNUSED(hash);
+    Q_UNUSED(r);
+    Q_UNUSED(s);
+    Q_UNUSED(expectedPubKey);
+    qWarning() << "calculateRecoveryId: OpenSSL not available";
+    return -1;
 #endif
 }
 

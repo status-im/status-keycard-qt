@@ -1,7 +1,11 @@
 #include "session_manager.h"
 #include "../utils/common.h"
+#include "../utils/crypto_utils.h"
+#include "../utils/signature_utils.h"
 #include <keycard-qt/i_communication_manager.h>
 #include <keycard-qt/command_set.h>
+#include <keycard-qt/card_command.h>
+#include <keycard-qt/tlv_utils.h>
 #include <QDebug>
 #include <memory>
 
@@ -560,6 +564,131 @@ SessionManager::Metadata SessionManager::getKeycardMetadata(const QString& pin, 
     updateAndPublishStatus(hasPin);
 
     return m_metadata;
+}
+
+SessionManager::SignResult SessionManager::sign(const QString& keyUid, const QString& pin, const QString& txHash,
+    const QString& path, const QString& storageFilePath, bool logEnabled, const QString& logFilePath)
+{
+    Q_UNUSED(storageFilePath);
+    qDebug() << "StatusKeycardQt::SessionManager::sign()";
+
+    stop();
+
+    {
+        QMutexLocker locker(&m_cardReadyMutex);
+        m_compositeMethodCallCancelled = false;
+    }
+
+    if (!ensureKeycardCommunication()) {
+        return SignResult();
+    }
+
+    m_commMgr->startBatchOperations();
+    auto batchGuard = [this](void*) { m_commMgr->endBatchOperations(); };
+    std::unique_ptr<void, decltype(batchGuard)> guard(reinterpret_cast<void*>(1), batchGuard);
+
+    if (!start(logEnabled, logFilePath)) {
+        setError(QString("Failed to start: %1").arg(m_lastError));
+        return SignResult();
+    }
+
+    bool cancelled = false;
+    {
+        QMutexLocker locker(&m_cardReadyMutex);
+        while ((m_state == SessionState::WaitingForCard || m_state == SessionState::WaitingForReader)
+               && !m_compositeMethodCallCancelled) {
+            m_cardReadyCondition.wait(&m_cardReadyMutex);
+        }
+        cancelled = m_compositeMethodCallCancelled;
+    }
+
+    if (cancelled) {
+        setError("sign cancelled");
+        return SignResult();
+    }
+
+    if (m_state != SessionState::Ready) {
+        setError(QString("Card not ready (state: %1)").arg(currentStateString()));
+        return SignResult();
+    }
+
+    auto status = getStatus();
+    if (!status.keycardInfo) {
+        setError("Keycard info not found");
+        return SignResult();
+    }
+
+    if (status.keycardInfo->keyUID != keyUid) {
+        setError("Keycard profile does not match the provided keyUid");
+        return SignResult();
+    }
+
+    QMutexLocker locker(&m_operationMutex);
+
+    if (!authorize(pin)) {
+        return SignResult();
+    }
+
+    // Execute sign command
+    QByteArray hashBytes = QByteArray::fromHex(txHash.toLatin1());
+    if (hashBytes.size() != 32) {
+        setError("txHash must be 32 bytes (64 hex characters)");
+        return SignResult();
+    }
+
+    auto cmd = std::make_unique<Keycard::SignCommand>(hashBytes, path, false);
+    Keycard::CommandResult cmdResult = m_commMgr->executeCommandSync(std::move(cmd));
+
+    if (!cmdResult.success) {
+        setError(QString("Sign failed: %1").arg(cmdResult.error));
+        return SignResult();
+    }
+
+    QVariantMap data = cmdResult.data.toMap();
+    QByteArray tlvResponse = data["tlvResponse"].toByteArray();
+    if (tlvResponse.isEmpty()) {
+        setError("Empty sign response");
+        return SignResult();
+    }
+
+    // Extract template content (unwrap 0xA0/0xA1 if present)
+    QByteArray innerData = SignatureUtils::extractTemplateContent(tlvResponse);
+
+    // Find public key (tag 0x80, 65 bytes)
+    QByteArray publicKey = Keycard::TLV::findTag(innerData, 0x80);
+
+    // Find DER signature (tag 0x30)
+    QByteArray derSig = SignatureUtils::findDERSignature(innerData);
+    if (derSig.isEmpty()) {
+        setError("DER signature not found in sign response");
+        return SignResult();
+    }
+
+    // Parse DER to get R and S
+    QByteArray r, s;
+    if (!SignatureUtils::parseDERSignature(derSig, r, s)) {
+        setError("Failed to parse DER signature");
+        return SignResult();
+    }
+
+    // Calculate recovery ID (V)
+    uint8_t v = 27;
+    if (!publicKey.isEmpty()) {
+        int recoveryId = CryptoUtils::calculateRecoveryId(hashBytes, r, s, publicKey);
+        if (recoveryId >= 0) {
+            v = static_cast<uint8_t>(recoveryId + 27);
+        } else {
+            qWarning() << "SessionManager::sign: ECDSA recovery failed, defaulting V=27";
+        }
+    } else {
+        qWarning() << "SessionManager::sign: No public key in response, defaulting V=27";
+    }
+
+    SignResult result;
+    result.r = QString::fromLatin1(r.toHex());
+    result.s = QString::fromLatin1(s.toHex());
+    result.v = v;
+    return result;
 }
 
 } // namespace StatusKeycard

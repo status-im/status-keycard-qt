@@ -378,4 +378,55 @@ QJsonObject RpcService::handleGetKeycardMetadata(quint64 id, const QJsonObject& 
     return createSuccessResponse(id, meta);
 }
 
+QJsonObject RpcService::handleSign(quint64 id, const QJsonObject& params) {
+    QString storagePath = params["storageFilePath"].toString();
+    QString keyUid = params["keyUid"].toString();
+    QString pin = params["pin"].toString();
+    QString txHash = params["txHash"].toString();
+    QString path = params["path"].toString();
+    bool logEnabled = params["logEnabled"].toBool(false);
+    QString logFilePath = params["logFilePath"].toString();
+
+    if (storagePath.isEmpty()) {
+        return createErrorResponse(id, -32602, "Missing required parameter: storageFilePath");
+    }
+
+    const QString keyUidWithout0x = remove0xPrefix(keyUid);
+    if (keyUidWithout0x.length() != KeyUidLengthWithout0x) {
+        return createErrorResponse(id, -32602, "keyUid must be " + QString::number(KeyUidLengthWithout0x) + " characters in hex, without 0x prefix");
+    }
+
+    if (pin.length() != PinLength) {
+        return createErrorResponse(id, -32602, "PIN must be " + QString::number(PinLength) + " digits");
+    }
+
+    const QString txHashClean = remove0xPrefix(txHash);
+    if (txHashClean.length() != 64) {
+        return createErrorResponse(id, -32602, "txHash must be 32 bytes (64 hex characters)");
+    }
+
+    if (path.isEmpty()) {
+        return createErrorResponse(id, -32602, "Missing required parameter: path");
+    }
+
+    QJsonObject validationError = validateAndConfigureStorage(id, storagePath);
+    if (!validationError.isEmpty()) {
+        return validationError;
+    }
+
+    SessionManager::SignResult result = m_sessionManager->sign(keyUidWithout0x, pin, txHashClean, path, storagePath,
+        logEnabled, logFilePath);
+    SignalManager::instance()->emitStatusChanged(m_sessionManager->getStatus());
+    if (!m_sessionManager->lastError().isEmpty()) {
+        return createErrorResponse(id, -32000, m_sessionManager->lastError());
+    }
+
+    QJsonObject sigObj;
+    sigObj["r"] = ensure0xPrefix(result.r);
+    sigObj["s"] = ensure0xPrefix(result.s);
+    sigObj["v"] = result.v;
+
+    return createSuccessResponse(id, sigObj);
+}
+
 } // namespace StatusKeycard
