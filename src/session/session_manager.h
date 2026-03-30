@@ -138,6 +138,8 @@ public:
     SignResult sign(const QString& keyUid, const QString& pin, const QString& txHash, const QString& path,
         const QString& storageFilePath, bool logEnabled = false, const QString& logFilePath = QString());
 
+    bool factoryResetKeycard(const QString& storageFilePath, bool logEnabled = false, const QString& logFilePath = QString());
+
     // Status structures (matching status-keycard-go exactly)
     struct Wallet {
         QString path;

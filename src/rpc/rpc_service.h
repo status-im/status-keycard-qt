@@ -107,6 +107,7 @@ private:
     QJsonObject handleUnblockUsingPUK(quint64 id, const QJsonObject& params);
     QJsonObject handleGetKeycardMetadata(quint64 id, const QJsonObject& params);
     QJsonObject handleSign(quint64 id, const QJsonObject& params);
+    QJsonObject handleFactoryResetKeycard(quint64 id, const QJsonObject& params);
 
     std::unique_ptr<SessionManager> m_sessionManager;
     std::shared_ptr<Keycard::ICommunicationManager> m_commMgr;
