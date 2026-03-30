@@ -691,4 +691,59 @@ SessionManager::SignResult SessionManager::sign(const QString& keyUid, const QSt
     return result;
 }
 
+bool SessionManager::factoryResetKeycard(const QString& storageFilePath,
+    bool logEnabled, const QString& logFilePath)
+{
+    Q_UNUSED(storageFilePath);
+    qDebug() << "StatusKeycardQt::SessionManager::factoryResetKeycard()";
+
+    stop();
+
+    {
+        QMutexLocker locker(&m_cardReadyMutex);
+        m_compositeMethodCallCancelled = false;
+    }
+
+    if (!ensureKeycardCommunication()) {
+        return false;
+    }
+
+    m_commMgr->startBatchOperations();
+    auto batchGuard = [this](void*) { m_commMgr->endBatchOperations(); };
+    std::unique_ptr<void, decltype(batchGuard)> guard(reinterpret_cast<void*>(1), batchGuard);
+
+    if (!start(logEnabled, logFilePath)) {
+        setError(QString("Failed to start: %1").arg(m_lastError));
+        return false;
+    }
+
+    bool cancelled = false;
+    {
+        QMutexLocker locker(&m_cardReadyMutex);
+        while ((m_state == SessionState::WaitingForCard || m_state == SessionState::WaitingForReader)
+               && !m_compositeMethodCallCancelled) {
+            m_cardReadyCondition.wait(&m_cardReadyMutex);
+        }
+        cancelled = m_compositeMethodCallCancelled;
+    }
+
+    if (cancelled) {
+        setError("factoryReset cancelled");
+        return false;
+    }
+
+    if (m_state != SessionState::Ready) {
+        setError(QString("Card not ready (state: %1)").arg(currentStateString()));
+        return false;
+    }
+
+    QMutexLocker locker(&m_operationMutex);
+
+    if (!factoryReset()) {
+        return false;
+    }
+
+    return true;
+}
+
 } // namespace StatusKeycard

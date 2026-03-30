@@ -429,4 +429,27 @@ QJsonObject RpcService::handleSign(quint64 id, const QJsonObject& params) {
     return createSuccessResponse(id, sigObj);
 }
 
+QJsonObject RpcService::handleFactoryResetKeycard(quint64 id, const QJsonObject& params) {
+    QString storagePath = params["storageFilePath"].toString();
+    bool logEnabled = params["logEnabled"].toBool(false);
+    QString logFilePath = params["logFilePath"].toString();
+
+    if (storagePath.isEmpty()) {
+        return createErrorResponse(id, -32602, "Missing required parameter: storageFilePath");
+    }
+
+    QJsonObject validationError = validateAndConfigureStorage(id, storagePath);
+    if (!validationError.isEmpty()) {
+        return validationError;
+    }
+
+    bool success = m_sessionManager->factoryResetKeycard(storagePath, logEnabled, logFilePath);
+    SignalManager::instance()->emitStatusChanged(m_sessionManager->getStatus());
+    if (!success) {
+        return createErrorResponse(id, -32000, m_sessionManager->lastError());
+    }
+
+    return createSuccessResponse(id, QJsonObject());
+}
+
 } // namespace StatusKeycard
