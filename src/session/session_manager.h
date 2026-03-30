@@ -129,6 +129,15 @@ public:
     Metadata getKeycardMetadata(const QString& pin, const QString& storageFilePath, bool logEnabled = false,
         const QString& logFilePath = QString());
 
+    struct SignResult {
+        QString r;   // 32-byte hex
+        QString s;   // 32-byte hex
+        int v;       // Recovery ID + 27
+        SignResult() : v(0) {}
+    };
+    SignResult sign(const QString& keyUid, const QString& pin, const QString& txHash, const QString& path,
+        const QString& storageFilePath, bool logEnabled = false, const QString& logFilePath = QString());
+
     // Status structures (matching status-keycard-go exactly)
     struct Wallet {
         QString path;

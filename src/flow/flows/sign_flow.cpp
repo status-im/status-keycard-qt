@@ -2,118 +2,13 @@
 #include "../flow_manager.h"
 #include "../flow_params.h"
 #include "../flow_signals.h"
+#include "../../utils/crypto_utils.h"
 #include <keycard-qt/command_set.h>
 #include <keycard-qt/communication_manager.h>
 #include <keycard-qt/card_command.h>
 #include <QDebug>
 
-#include <openssl/ec.h>
-#include <openssl/ecdsa.h>
-#include <openssl/obj_mac.h>
-#include <openssl/bn.h>
-#include <openssl/evp.h>
-
 namespace StatusKeycard {
-
-// Helper function to calculate recovery ID (V value) from signature
-// Tries both possible V values (0 and 1) and returns the one that matches expectedPubKey
-// Returns -1 if neither works
-static int calculateRecoveryId(const QByteArray& hash, const QByteArray& r, const QByteArray& s,
-                                const QByteArray& expectedPubKey)
-{
-    if (hash.size() != 32 || r.size() != 32 || s.size() != 32 || expectedPubKey.size() != 65) {
-        return -1;
-    }
-
-    // Create EC_KEY and set up for secp256k1
-    EC_KEY* eckey = EC_KEY_new_by_curve_name(NID_secp256k1);
-    if (!eckey) {
-        return -1;
-    }
-
-    const EC_GROUP* group = EC_KEY_get0_group(eckey);
-
-    // Parse the expected public key
-    EC_POINT* expected_point = EC_POINT_new(group);
-    if (!expected_point || !EC_POINT_oct2point(group, expected_point,
-            reinterpret_cast<const unsigned char*>(expectedPubKey.data()), 65, nullptr)) {
-        if (expected_point) EC_POINT_free(expected_point);
-        EC_KEY_free(eckey);
-        return -1;
-    }
-
-    // Convert r to a point on the curve
-    // For ECDSA recovery, we need to find the point R on the curve where R.x = r
-    // There are two possible points (with even and odd Y coordinates)
-    BIGNUM* r_bn = BN_bin2bn(reinterpret_cast<const unsigned char*>(r.data()), 32, nullptr);
-    BN_CTX* ctx = BN_CTX_new();
-
-    int result = -1;
-
-    // Try both possible Y coordinates (recovery ID 0 and 1)
-    for (int rec_id = 0; rec_id <= 1; rec_id++) {
-        EC_POINT* R = EC_POINT_new(group);
-        if (!R) continue;
-
-        // Set R.x = r and calculate R.y using the curve equation
-        // y^2 = x^3 + 7 (for secp256k1)
-        if (EC_POINT_set_compressed_coordinates(group, R, r_bn, rec_id, ctx) == 1) {
-            // Now perform ECDSA recovery: Q = r^-1 * (s*R - e*G)
-            // Where Q is the public key, e is the hash, G is the generator
-
-            BIGNUM* s_bn = BN_bin2bn(reinterpret_cast<const unsigned char*>(s.data()), 32, nullptr);
-            BIGNUM* e_bn = BN_bin2bn(reinterpret_cast<const unsigned char*>(hash.data()), 32, nullptr);
-            BIGNUM* order = BN_new();
-            BIGNUM* r_inv = BN_new();
-
-            EC_GROUP_get_order(group, order, ctx);
-
-            // Calculate r^-1 mod order
-            if (BN_mod_inverse(r_inv, r_bn, order, ctx)) {
-                // Calculate s*R
-                EC_POINT* sR = EC_POINT_new(group);
-                EC_POINT_mul(group, sR, nullptr, R, s_bn, ctx);
-
-                // Calculate e*G
-                EC_POINT* eG = EC_POINT_new(group);
-                EC_POINT_mul(group, eG, e_bn, nullptr, nullptr, ctx);
-
-                // Calculate s*R - e*G
-                EC_POINT_invert(group, eG, ctx);
-                EC_POINT_add(group, sR, sR, eG, ctx);
-
-                // Calculate Q = r^-1 * (s*R - e*G)
-                EC_POINT* Q = EC_POINT_new(group);
-                EC_POINT_mul(group, Q, nullptr, sR, r_inv, ctx);
-
-                // Compare with expected public key
-                if (EC_POINT_cmp(group, Q, expected_point, ctx) == 0) {
-                    result = rec_id;
-                }
-
-                EC_POINT_free(Q);
-                EC_POINT_free(eG);
-                EC_POINT_free(sR);
-            }
-
-            BN_free(r_inv);
-            BN_free(order);
-            BN_free(e_bn);
-            BN_free(s_bn);
-        }
-
-        EC_POINT_free(R);
-
-        if (result != -1) break;  // Found it!
-    }
-
-    BN_CTX_free(ctx);
-    BN_free(r_bn);
-    EC_POINT_free(expected_point);
-    EC_KEY_free(eckey);
-
-    return result;
-}
 
 SignFlow::SignFlow(FlowManager* manager, const QJsonObject& params, QObject* parent)
     : FlowBase(manager, FlowType::Sign, params, parent)
@@ -385,7 +280,7 @@ QJsonObject SignFlow::execute()
     if (publicKey.isEmpty()) {
         qWarning() << "SignFlow: No public key found, defaulting V=27";
     } else {
-        int recoveryId = calculateRecoveryId(hashBytes, r, s, publicKey);
+        int recoveryId = CryptoUtils::calculateRecoveryId(hashBytes, r, s, publicKey);
         if (recoveryId == -1) {
             qWarning() << "SignFlow: ECDSA recovery failed, defaulting V=27";
         } else {

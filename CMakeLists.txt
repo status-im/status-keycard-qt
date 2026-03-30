@@ -85,6 +85,7 @@ set(SOURCES
     src/c_api.cpp
     src/utils/bip32_xpub_helpers.cpp
     src/utils/crypto_utils.cpp
+    src/utils/signature_utils.cpp
     src/session/session_manager.cpp
     src/session/session_composite_operations.cpp
     src/storage/file_pairing_storage.cpp
