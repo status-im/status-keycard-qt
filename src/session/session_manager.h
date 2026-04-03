@@ -120,11 +120,14 @@ public:
         bool logEnabled = false, const QString& logFilePath = QString());
 
     bool changeKeycardPIN(const QString& keyUid, const QString& pin, const QString& newPIN,
-        const QString& storageFilePath, bool logEnabled = false, const QString& logFilePath = QString());
+        const QString& storageFilePath, bool logEnabled = false, const QString& logFilePath = QString(),
+        const QString& keycardUid = QString());
     bool changeKeycardPUK(const QString& keyUid, const QString& pin, const QString& newPUK,
-        const QString& storageFilePath, bool logEnabled = false, const QString& logFilePath = QString());
+        const QString& storageFilePath, bool logEnabled = false, const QString& logFilePath = QString(),
+        const QString& keycardUid = QString());
     bool unblockUsingPUK(const QString& keyUid, const QString& puk, const QString& newPIN,
-        const QString& storageFilePath, bool logEnabled = false, const QString& logFilePath = QString());
+        const QString& storageFilePath, bool logEnabled = false, const QString& logFilePath = QString(),
+        const QString& keycardUid = QString());
 
     Metadata getKeycardMetadata(const QString& pin, const QString& storageFilePath, bool logEnabled = false,
         const QString& logFilePath = QString());
@@ -138,7 +141,8 @@ public:
     SignResult sign(const QString& keyUid, const QString& pin, const QString& txHash, const QString& path,
         const QString& storageFilePath, bool logEnabled = false, const QString& logFilePath = QString());
 
-    bool factoryResetKeycard(const QString& storageFilePath, bool logEnabled = false, const QString& logFilePath = QString());
+    bool factoryResetKeycard(const QString& storageFilePath, bool logEnabled = false, const QString& logFilePath = QString(),
+        const QString& keycardUid = QString());
 
     // Status structures (matching status-keycard-go exactly)
     struct Wallet {
@@ -203,6 +207,9 @@ private:
     bool ensureKeycardCommunication();
     bool ensureStarted();
     bool ensureAuthorized();
+
+    bool validateCompositeKeyUid(const QString& keyUid, const ApplicationInfoV2* keycardInfo);
+    bool validateCompositeKeycardUid(const QString& keycardUid, const ApplicationInfoV2* keycardInfo);
 
     // Fetch fresh app status from card and publish status-changed signal
     void updateAndPublishStatus(bool authorized);

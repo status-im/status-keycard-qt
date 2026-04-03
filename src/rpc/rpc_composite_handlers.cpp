@@ -14,13 +14,12 @@ QJsonObject RpcService::handleLogin(quint64 id, const QJsonObject& params) {
     QString pin = params["pin"].toString();
     bool logEnabled = params["logEnabled"].toBool(false);
     QString logFilePath = params["logFilePath"].toString();
-
     if (storagePath.isEmpty()) {
         return createErrorResponse(id, -32602, "Missing required parameter: storageFilePath");
     }
 
     const QString keyUidWithout0x = remove0xPrefix(keyUid);
-    if (keyUidWithout0x.length() != KeyUidLengthWithout0x) {
+    if (!keyUidWithout0x.isEmpty() && keyUidWithout0x.length() != KeyUidLengthWithout0x) {
         return createErrorResponse(id, -32602, "keyUid must be " + QString::number(KeyUidLengthWithout0x) + " characters in hex, without 0x prefix");
     }
 
@@ -88,13 +87,12 @@ QJsonObject RpcService::handleExportExtendedPublicKey(quint64 id, const QJsonObj
     QString path = params["path"].toString();
     bool logEnabled = params["logEnabled"].toBool(false);
     QString logFilePath = params["logFilePath"].toString();
-
     if (storagePath.isEmpty()) {
         return createErrorResponse(id, -32602, "Missing required parameter: storageFilePath");
     }
 
     const QString keyUidWithout0x = remove0xPrefix(keyUid);
-    if (keyUidWithout0x.length() != KeyUidLengthWithout0x) {
+    if (!keyUidWithout0x.isEmpty() && keyUidWithout0x.length() != KeyUidLengthWithout0x) {
         return createErrorResponse(id, -32602, "keyUid must be " + QString::number(KeyUidLengthWithout0x) + " characters in hex, without 0x prefix");
     }
 
@@ -136,13 +134,12 @@ QJsonObject RpcService::handleExportPublicKey(quint64 id, const QJsonObject& par
     bool exportMasterAddress = params["exportMasterAddress"].toBool(false);
     bool logEnabled = params["logEnabled"].toBool(false);
     QString logFilePath = params["logFilePath"].toString();
-
     if (storagePath.isEmpty()) {
         return createErrorResponse(id, -32602, "Missing required parameter: storageFilePath");
     }
 
     const QString keyUidWithout0x = remove0xPrefix(keyUid);
-    if (keyUidWithout0x.length() != KeyUidLengthWithout0x) {
+    if (!keyUidWithout0x.isEmpty() && keyUidWithout0x.length() != KeyUidLengthWithout0x) {
         return createErrorResponse(id, -32602, "keyUid must be " + QString::number(KeyUidLengthWithout0x) + " characters in hex, without 0x prefix");
     }
 
@@ -227,13 +224,14 @@ QJsonObject RpcService::handleChangeKeycardPIN(quint64 id, const QJsonObject& pa
     QString newPin = params["newPin"].toString();
     bool logEnabled = params["logEnabled"].toBool(false);
     QString logFilePath = params["logFilePath"].toString();
+    QString keycardUid = remove0xPrefix(params["keycardUid"].toString());
 
     if (storagePath.isEmpty()) {
         return createErrorResponse(id, -32602, "Missing required parameter: storageFilePath");
     }
 
     const QString keyUidWithout0x = remove0xPrefix(keyUid);
-    if (keyUidWithout0x.length() != KeyUidLengthWithout0x) {
+    if (!keyUidWithout0x.isEmpty() && keyUidWithout0x.length() != KeyUidLengthWithout0x) {
         return createErrorResponse(id, -32602, "keyUid must be " + QString::number(KeyUidLengthWithout0x) + " characters in hex, without 0x prefix");
     }
 
@@ -250,7 +248,8 @@ QJsonObject RpcService::handleChangeKeycardPIN(quint64 id, const QJsonObject& pa
         return validationError;
     }
 
-    bool success = m_sessionManager->changeKeycardPIN(keyUidWithout0x, pin, newPin, storagePath, logEnabled, logFilePath);
+    bool success = m_sessionManager->changeKeycardPIN(keyUidWithout0x, pin, newPin, storagePath, logEnabled, logFilePath,
+        keycardUid);
     SignalManager::instance()->emitStatusChanged(m_sessionManager->getStatus());
     if (!success) {
         return createErrorResponse(id, -32000, m_sessionManager->lastError());
@@ -266,13 +265,14 @@ QJsonObject RpcService::handleChangeKeycardPUK(quint64 id, const QJsonObject& pa
     QString newPuk = params["newPuk"].toString();
     bool logEnabled = params["logEnabled"].toBool(false);
     QString logFilePath = params["logFilePath"].toString();
+    QString keycardUid = remove0xPrefix(params["keycardUid"].toString());
 
     if (storagePath.isEmpty()) {
         return createErrorResponse(id, -32602, "Missing required parameter: storageFilePath");
     }
 
     const QString keyUidWithout0x = remove0xPrefix(keyUid);
-    if (keyUidWithout0x.length() != KeyUidLengthWithout0x) {
+    if (!keyUidWithout0x.isEmpty() && keyUidWithout0x.length() != KeyUidLengthWithout0x) {
         return createErrorResponse(id, -32602, "keyUid must be " + QString::number(KeyUidLengthWithout0x) + " characters in hex, without 0x prefix");
     }
 
@@ -289,7 +289,8 @@ QJsonObject RpcService::handleChangeKeycardPUK(quint64 id, const QJsonObject& pa
         return validationError;
     }
 
-    bool success = m_sessionManager->changeKeycardPUK(keyUidWithout0x, pin, newPuk, storagePath, logEnabled, logFilePath);
+    bool success = m_sessionManager->changeKeycardPUK(keyUidWithout0x, pin, newPuk, storagePath, logEnabled, logFilePath,
+        keycardUid);
     SignalManager::instance()->emitStatusChanged(m_sessionManager->getStatus());
     if (!success) {
         return createErrorResponse(id, -32000, m_sessionManager->lastError());
@@ -305,13 +306,14 @@ QJsonObject RpcService::handleUnblockUsingPUK(quint64 id, const QJsonObject& par
     QString newPin = params["newPin"].toString();
     bool logEnabled = params["logEnabled"].toBool(false);
     QString logFilePath = params["logFilePath"].toString();
+    QString keycardUid = remove0xPrefix(params["keycardUid"].toString());
 
     if (storagePath.isEmpty()) {
         return createErrorResponse(id, -32602, "Missing required parameter: storageFilePath");
     }
 
     const QString keyUidWithout0x = remove0xPrefix(keyUid);
-    if (keyUidWithout0x.length() != KeyUidLengthWithout0x) {
+    if (!keyUidWithout0x.isEmpty() && keyUidWithout0x.length() != KeyUidLengthWithout0x) {
         return createErrorResponse(id, -32602, "keyUid must be " + QString::number(KeyUidLengthWithout0x) + " characters in hex, without 0x prefix");
     }
 
@@ -328,7 +330,8 @@ QJsonObject RpcService::handleUnblockUsingPUK(quint64 id, const QJsonObject& par
         return validationError;
     }
 
-    bool success = m_sessionManager->unblockUsingPUK(keyUidWithout0x, puk, newPin, storagePath, logEnabled, logFilePath);
+    bool success = m_sessionManager->unblockUsingPUK(keyUidWithout0x, puk, newPin, storagePath, logEnabled, logFilePath,
+        keycardUid);
     SignalManager::instance()->emitStatusChanged(m_sessionManager->getStatus());
     if (!success) {
         return createErrorResponse(id, -32000, m_sessionManager->lastError());
@@ -392,7 +395,7 @@ QJsonObject RpcService::handleSign(quint64 id, const QJsonObject& params) {
     }
 
     const QString keyUidWithout0x = remove0xPrefix(keyUid);
-    if (keyUidWithout0x.length() != KeyUidLengthWithout0x) {
+    if (!keyUidWithout0x.isEmpty() && keyUidWithout0x.length() != KeyUidLengthWithout0x) {
         return createErrorResponse(id, -32602, "keyUid must be " + QString::number(KeyUidLengthWithout0x) + " characters in hex, without 0x prefix");
     }
 
@@ -433,6 +436,7 @@ QJsonObject RpcService::handleFactoryResetKeycard(quint64 id, const QJsonObject&
     QString storagePath = params["storageFilePath"].toString();
     bool logEnabled = params["logEnabled"].toBool(false);
     QString logFilePath = params["logFilePath"].toString();
+    QString keycardUid = remove0xPrefix(params["keycardUid"].toString());
 
     if (storagePath.isEmpty()) {
         return createErrorResponse(id, -32602, "Missing required parameter: storageFilePath");
@@ -443,7 +447,7 @@ QJsonObject RpcService::handleFactoryResetKeycard(quint64 id, const QJsonObject&
         return validationError;
     }
 
-    bool success = m_sessionManager->factoryResetKeycard(storagePath, logEnabled, logFilePath);
+    bool success = m_sessionManager->factoryResetKeycard(storagePath, logEnabled, logFilePath, keycardUid);
     SignalManager::instance()->emitStatusChanged(m_sessionManager->getStatus());
     if (!success) {
         return createErrorResponse(id, -32000, m_sessionManager->lastError());
