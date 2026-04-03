@@ -11,6 +11,38 @@
 
 namespace StatusKeycard {
 
+bool SessionManager::validateCompositeKeyUid(const QString& keyUid, const ApplicationInfoV2* keycardInfo)
+{
+    if (keyUid.isEmpty()) {
+        return true;
+    }
+    if (!keycardInfo) {
+        setError("Keycard info not found");
+        return false;
+    }
+    if (keycardInfo->keyUID != keyUid) {
+        setError("Keycard profile does not match the provided keyUid");
+        return false;
+    }
+    return true;
+}
+
+bool SessionManager::validateCompositeKeycardUid(const QString& keycardUid, const ApplicationInfoV2* keycardInfo)
+{
+    if (keycardUid.isEmpty()) {
+        return true;
+    }
+    if (!keycardInfo) {
+        setError("Keycard info not found");
+        return false;
+    }
+    if (QString::compare(keycardInfo->instanceUID, keycardUid, Qt::CaseInsensitive) != 0) {
+        setError("Keycard instance UID does not match the provided keycardUid");
+        return false;
+    }
+    return true;
+}
+
 SessionManager::LoginKeys SessionManager::login(const QString& keyUid, const QString& pin, bool logEnabled, const QString& logFilePath)
 {
     qDebug() << "StatusKeycardQt::SessionManager::login()";
@@ -61,13 +93,12 @@ SessionManager::LoginKeys SessionManager::login(const QString& keyUid, const QSt
     }
 
     auto status = getStatus();
-    if (!status.keycardInfo || !status.keycardInfo) {
+    if (!status.keycardInfo) {
         setError("Keycard info not found");
         return LoginKeys();
     }
 
-    if (status.keycardInfo->keyUID != keyUid) {
-        setError("Keycard profile does not match the profile (keyUid) being tried to login with");
+    if (!validateCompositeKeyUid(keyUid, status.keycardInfo)) {
         return LoginKeys();
     }
 
@@ -201,13 +232,12 @@ SessionManager::ExtendedPublicKey SessionManager::exportExtendedPublicKey(const 
     }
 
     auto status = getStatus();
-    if (!status.keycardInfo || !status.keycardInfo) {
+    if (!status.keycardInfo) {
         setError("Keycard info not found");
         return ExtendedPublicKey();
     }
 
-    if (status.keycardInfo->keyUID != keyUid) {
-        setError("Keycard profile does not match the profile (keyUid) being tried to export extended public key for");
+    if (!validateCompositeKeyUid(keyUid, status.keycardInfo)) {
         return ExtendedPublicKey();
     }
 
@@ -268,13 +298,12 @@ SessionManager::ExportPublicKeyResult SessionManager::exportPublicKey(const QStr
     }
 
     auto status = getStatus();
-    if (!status.keycardInfo || !status.keycardInfo) {
+    if (!status.keycardInfo) {
         setError("Keycard info not found");
         return ExportPublicKeyResult();
     }
 
-    if (status.keycardInfo->keyUID != keyUid) {
-        setError("Keycard profile does not match the profile (keyUid) being tried to export public key for");
+    if (!validateCompositeKeyUid(keyUid, status.keycardInfo)) {
         return ExportPublicKeyResult();
     }
 
@@ -288,7 +317,8 @@ SessionManager::ExportPublicKeyResult SessionManager::exportPublicKey(const QStr
 }
 
 bool SessionManager::changeKeycardPIN(const QString& keyUid, const QString& pin, const QString& newPIN,
-    const QString& storageFilePath, bool logEnabled, const QString& logFilePath)
+    const QString& storageFilePath, bool logEnabled, const QString& logFilePath,
+    const QString& keycardUid)
 {
     Q_UNUSED(storageFilePath);
     qDebug() << "StatusKeycardQt::SessionManager::changeKeycardPIN()";
@@ -339,8 +369,10 @@ bool SessionManager::changeKeycardPIN(const QString& keyUid, const QString& pin,
         return false;
     }
 
-    if (status.keycardInfo->keyUID != keyUid) {
-        setError("Keycard profile does not match the profile (keyUid) being tried to change PIN for");
+    if (!validateCompositeKeyUid(keyUid, status.keycardInfo)) {
+        return false;
+    }
+    if (!validateCompositeKeycardUid(keycardUid, status.keycardInfo)) {
         return false;
     }
 
@@ -354,7 +386,8 @@ bool SessionManager::changeKeycardPIN(const QString& keyUid, const QString& pin,
 }
 
 bool SessionManager::changeKeycardPUK(const QString& keyUid, const QString& pin, const QString& newPUK,
-    const QString& storageFilePath, bool logEnabled, const QString& logFilePath)
+    const QString& storageFilePath, bool logEnabled, const QString& logFilePath,
+    const QString& keycardUid)
 {
     Q_UNUSED(storageFilePath);
     qDebug() << "StatusKeycardQt::SessionManager::changeKeycardPUK()";
@@ -405,8 +438,10 @@ bool SessionManager::changeKeycardPUK(const QString& keyUid, const QString& pin,
         return false;
     }
 
-    if (status.keycardInfo->keyUID != keyUid) {
-        setError("Keycard profile does not match the profile (keyUid) being tried to change PUK for");
+    if (!validateCompositeKeyUid(keyUid, status.keycardInfo)) {
+        return false;
+    }
+    if (!validateCompositeKeycardUid(keycardUid, status.keycardInfo)) {
         return false;
     }
 
@@ -420,7 +455,8 @@ bool SessionManager::changeKeycardPUK(const QString& keyUid, const QString& pin,
 }
 
 bool SessionManager::unblockUsingPUK(const QString& keyUid, const QString& puk, const QString& newPIN,
-    const QString& storageFilePath, bool logEnabled, const QString& logFilePath)
+    const QString& storageFilePath, bool logEnabled, const QString& logFilePath,
+    const QString& keycardUid)
 {
     Q_UNUSED(storageFilePath);
     qDebug() << "StatusKeycardQt::SessionManager::unblockUsingPUK()";
@@ -471,8 +507,10 @@ bool SessionManager::unblockUsingPUK(const QString& keyUid, const QString& puk, 
         return false;
     }
 
-    if (status.keycardInfo->keyUID != keyUid) {
-        setError("Keycard profile does not match the profile (keyUid) being tried to unblock");
+    if (!validateCompositeKeyUid(keyUid, status.keycardInfo)) {
+        return false;
+    }
+    if (!validateCompositeKeycardUid(keycardUid, status.keycardInfo)) {
         return false;
     }
 
@@ -610,8 +648,7 @@ SessionManager::SignResult SessionManager::sign(const QString& keyUid, const QSt
         return SignResult();
     }
 
-    if (status.keycardInfo->keyUID != keyUid) {
-        setError("Keycard profile does not match the provided keyUid");
+    if (!validateCompositeKeyUid(keyUid, status.keycardInfo)) {
         return SignResult();
     }
 
@@ -684,7 +721,7 @@ SessionManager::SignResult SessionManager::sign(const QString& keyUid, const QSt
 }
 
 bool SessionManager::factoryResetKeycard(const QString& storageFilePath,
-    bool logEnabled, const QString& logFilePath)
+    bool logEnabled, const QString& logFilePath, const QString& keycardUid)
 {
     Q_UNUSED(storageFilePath);
     qDebug() << "StatusKeycardQt::SessionManager::factoryResetKeycard()";
@@ -724,12 +761,14 @@ bool SessionManager::factoryResetKeycard(const QString& storageFilePath,
         return false;
     }
 
-    if (m_state != SessionState::Ready) {
-        setError(QString("Card not ready (state: %1)").arg(currentStateString()));
+    auto status = getStatus();
+    if (!status.keycardInfo) {
+        setError("Keycard info not found");
         return false;
     }
-
-    QMutexLocker locker(&m_operationMutex);
+    if (!validateCompositeKeycardUid(keycardUid, status.keycardInfo)) {
+        return false;
+    }
 
     if (!factoryReset()) {
         return false;
