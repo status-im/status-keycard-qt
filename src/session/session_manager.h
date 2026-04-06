@@ -92,7 +92,8 @@ public:
     };
     RecoverKeys exportRecoverKeys(bool isMainCommand = true);
     RecoverKeys recover(const QString& pin, const QString& puk, const QString& pairingPassword, const QString& mnemonic,
-                        bool logEnabled = false, const QString& logFilePath = QString());
+                        bool logEnabled = false, const QString& logFilePath = QString(),
+                        const QString& keycardUid = QString());
     RecoverKeys load(const QString& pin, const QString& puk, const QString& pairingPassword, const QString& mnemonic,
                      const QString& metadataName = QString(), const QStringList& metadataPaths = QStringList(),
                      bool logEnabled = false, const QString& logFilePath = QString());
@@ -213,6 +214,10 @@ private:
 
     bool validateCompositeKeyUid(const QString& keyUid, const ApplicationInfoV2* keycardInfo);
     bool validateCompositeKeycardUid(const QString& keycardUid, const ApplicationInfoV2* keycardInfo);
+
+    RecoverKeys initializeAndLoad(const QString& pin, const QString& puk, const QString& pairingPassword,
+                                  const QString& mnemonic, const QString& metadataName,
+                                  const QStringList& metadataPaths);
 
     // Fetch fresh app status from card and publish status-changed signal
     void updateAndPublishStatus(bool authorized);

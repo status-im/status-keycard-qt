@@ -113,8 +113,42 @@ SessionManager::LoginKeys SessionManager::login(const QString& keyUid, const QSt
     return exportLoginKeys(false);
 }
 
+SessionManager::RecoverKeys SessionManager::initializeAndLoad(const QString& pin, const QString& puk,
+    const QString& pairingPassword, const QString& mnemonic, const QString& metadataName,
+    const QStringList& metadataPaths)
+{
+    // Step 1: Initialize card with the provided PIN and PUK
+    if (!initialize(pin, puk, pairingPassword)) {
+        return RecoverKeys();
+    }
+
+    // Step 2: Authorize with PIN
+    QMutexLocker locker(&m_operationMutex);
+
+    if (!authorize(pin)) {
+        return RecoverKeys();
+    }
+
+    // Step 3: Load mnemonic onto the card
+    QString keyUID = loadMnemonic(mnemonic, QString());
+    if (keyUID.isEmpty()) {
+        return RecoverKeys();
+    }
+
+    // Step 4: Optionally store metadata
+    if (!metadataName.isEmpty()) {
+        if (!storeMetadata(metadataName, metadataPaths)) {
+            return RecoverKeys();
+        }
+    }
+
+    // Step 5: Export recover keys (batch already open)
+    return exportRecoverKeys(false);
+}
+
 SessionManager::RecoverKeys SessionManager::recover(const QString& pin, const QString& puk, const QString& pairingPassword,
-                                const QString& mnemonic, bool logEnabled, const QString& logFilePath)
+                                const QString& mnemonic, bool logEnabled, const QString& logFilePath,
+                                const QString& keycardUid)
 {
     qDebug() << "StatusKeycardQt::SessionManager::recover()";
 
@@ -158,31 +192,19 @@ SessionManager::RecoverKeys SessionManager::recover(const QString& pin, const QS
         return RecoverKeys();
     }
 
-    // Step 3: Factory reset (works from any card state)
+    // Step 3: Validate the keycard UID matches if provided
+    auto status = getStatus();
+    if (!validateCompositeKeycardUid(keycardUid, status.keycardInfo)) {
+        return RecoverKeys();
+    }
+
+    // Step 4: Factory reset (works from any card state)
     if (!factoryReset()) {
         return RecoverKeys();
     }
 
-    // Step 4: Initialize card with new PIN and PUK
-    if (!initialize(pin, puk, pairingPassword)) {
-        return RecoverKeys();
-    }
-
-    // Step 5: Authorize with PIN (batch already active — same NFC session)
-    QMutexLocker locker(&m_operationMutex);
-
-    if (!authorize(pin)) {
-        return RecoverKeys();
-    }
-
-    // Step 6: Load mnemonic onto the card
-    QString keyUID = loadMnemonic(mnemonic, QString());
-    if (keyUID.isEmpty()) {
-        return RecoverKeys();
-    }
-
-    // Step 7: Export recover keys (not main command — batch already open)
-    return exportRecoverKeys(false);
+    // Step 5: Initialize, load mnemonic, and export keys
+    return initializeAndLoad(pin, puk, pairingPassword, mnemonic, QString(), QStringList());
 }
 
 SessionManager::RecoverKeys SessionManager::load(const QString& pin, const QString& puk, const QString& pairingPassword,
@@ -236,33 +258,8 @@ SessionManager::RecoverKeys SessionManager::load(const QString& pin, const QStri
         return RecoverKeys();
     }
 
-    // Step 3: Initialize the empty card with the provided PIN and PUK
-    if (!initialize(pin, puk, pairingPassword)) {
-        return RecoverKeys();
-    }
-
-    // Step 4: Authorize with PIN (batch already active — same NFC session)
-    QMutexLocker locker(&m_operationMutex);
-
-    if (!authorize(pin)) {
-        return RecoverKeys();
-    }
-
-    // Step 5: Load mnemonic onto the card
-    QString keyUID = loadMnemonic(mnemonic, QString());
-    if (keyUID.isEmpty()) {
-        return RecoverKeys();
-    }
-
-    // Step 6: Optionally store metadata
-    if (!metadataName.isEmpty()) {
-        if (!storeMetadata(metadataName, metadataPaths)) {
-            return RecoverKeys();
-        }
-    }
-
-    // Step 7: Export recover keys (not main command — batch already open)
-    return exportRecoverKeys(false);
+    // Step 3: Initialize, load mnemonic, and export keys
+    return initializeAndLoad(pin, puk, pairingPassword, mnemonic, metadataName, metadataPaths);
 }
 
 SessionManager::ExtendedPublicKey SessionManager::exportExtendedPublicKey(const QString& keyUid, const QString& pin,
