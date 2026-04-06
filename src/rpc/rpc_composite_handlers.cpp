@@ -47,6 +47,7 @@ QJsonObject RpcService::handleRecover(quint64 id, const QJsonObject& params) {
     QString puk = params["puk"].toString();
     QString pairingPassword = params["pairingPassword"].toString();
     QString mnemonic = params["mnemonic"].toString();
+    QString keycardUid = remove0xPrefix(params["keycardUid"].toString());
     bool logEnabled = params["logEnabled"].toBool(false);
     QString logFilePath = params["logFilePath"].toString();
 
@@ -71,7 +72,7 @@ QJsonObject RpcService::handleRecover(quint64 id, const QJsonObject& params) {
         return validationError;
     }
 
-    SessionManager::RecoverKeys keys = m_sessionManager->recover(pin, puk, pairingPassword, mnemonic, logEnabled, logFilePath);
+    SessionManager::RecoverKeys keys = m_sessionManager->recover(pin, puk, pairingPassword, mnemonic, logEnabled, logFilePath, keycardUid);
     SignalManager::instance()->emitStatusChanged(m_sessionManager->getStatus());
     if (!m_sessionManager->lastError().isEmpty()) {
         return createErrorResponse(id, -32000, m_sessionManager->lastError());
