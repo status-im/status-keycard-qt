@@ -80,6 +80,55 @@ QJsonObject RpcService::handleRecover(quint64 id, const QJsonObject& params) {
     return createSuccessResponse(id, recoverKeysToJson(keys));
 }
 
+QJsonObject RpcService::handleLoad(quint64 id, const QJsonObject& params) {
+    QString storagePath = params["storageFilePath"].toString();
+    QString pin = params["pin"].toString();
+    QString puk = params["puk"].toString();
+    QString pairingPassword = params["pairingPassword"].toString();
+    QString mnemonic = params["mnemonic"].toString();
+    QString metadataName = params["metadataName"].toString();
+    bool logEnabled = params["logEnabled"].toBool(false);
+    QString logFilePath = params["logFilePath"].toString();
+
+    if (storagePath.isEmpty()) {
+        return createErrorResponse(id, -32602, "Missing required parameter: storageFilePath");
+    }
+
+    if (pin.length() != PinLength) {
+        return createErrorResponse(id, -32602, "PIN must be " + QString::number(PinLength) + " digits");
+    }
+
+    if (puk.length() != PukLength) {
+        return createErrorResponse(id, -32602, "PUK must be " + QString::number(PukLength) + " digits");
+    }
+
+    if (mnemonic.isEmpty()) {
+        return createErrorResponse(id, -32602, "mnemonic is required");
+    }
+
+    QStringList metadataPaths;
+    if (params.contains("metadataPaths") && params["metadataPaths"].isArray()) {
+        const QJsonArray pathsArray = params["metadataPaths"].toArray();
+        for (const QJsonValue& val : pathsArray) {
+            metadataPaths.append(val.toString());
+        }
+    }
+
+    QJsonObject validationError = validateAndConfigureStorage(id, storagePath);
+    if (!validationError.isEmpty()) {
+        return validationError;
+    }
+
+    SessionManager::RecoverKeys keys = m_sessionManager->load(pin, puk, pairingPassword, mnemonic,
+        metadataName, metadataPaths, logEnabled, logFilePath);
+    SignalManager::instance()->emitStatusChanged(m_sessionManager->getStatus());
+    if (!m_sessionManager->lastError().isEmpty()) {
+        return createErrorResponse(id, -32000, m_sessionManager->lastError());
+    }
+
+    return createSuccessResponse(id, recoverKeysToJson(keys));
+}
+
 QJsonObject RpcService::handleExportExtendedPublicKey(quint64 id, const QJsonObject& params) {
     QString storagePath = params["storageFilePath"].toString();
     QString keyUid = params["keyUid"].toString();

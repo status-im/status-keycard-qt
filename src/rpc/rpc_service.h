@@ -100,6 +100,7 @@ private:
     QJsonObject handleCancelCurrentOperation(quint64 id, const QJsonObject& params);
     QJsonObject handleLogin(quint64 id, const QJsonObject& params);
     QJsonObject handleRecover(quint64 id, const QJsonObject& params);
+    QJsonObject handleLoad(quint64 id, const QJsonObject& params);
     QJsonObject handleExportExtendedPublicKey(quint64 id, const QJsonObject& params);
     QJsonObject handleExportPublicKey(quint64 id, const QJsonObject& params);
     QJsonObject handleChangeKeycardPIN(quint64 id, const QJsonObject& params);

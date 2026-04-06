@@ -93,6 +93,9 @@ public:
     RecoverKeys exportRecoverKeys(bool isMainCommand = true);
     RecoverKeys recover(const QString& pin, const QString& puk, const QString& pairingPassword, const QString& mnemonic,
                         bool logEnabled = false, const QString& logFilePath = QString());
+    RecoverKeys load(const QString& pin, const QString& puk, const QString& pairingPassword, const QString& mnemonic,
+                     const QString& metadataName = QString(), const QStringList& metadataPaths = QStringList(),
+                     bool logEnabled = false, const QString& logFilePath = QString());
 
     struct ExtendedPublicKey {
         QString address;
