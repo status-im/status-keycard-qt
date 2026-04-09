@@ -115,10 +115,10 @@ SessionManager::LoginKeys SessionManager::login(const QString& keyUid, const QSt
 
 SessionManager::RecoverKeys SessionManager::initializeAndLoad(const QString& pin, const QString& puk,
     const QString& pairingPassword, const QString& mnemonic, const QString& metadataName,
-    const QStringList& metadataPaths)
+    const QStringList& metadataPaths, const bool cardContainsKeyOnly)
 {
     // Step 1: Initialize card with the provided PIN and PUK
-    if (!initialize(pin, puk, pairingPassword)) {
+    if (!cardContainsKeyOnly && !initialize(pin, puk, pairingPassword)) {
         return RecoverKeys();
     }
 
@@ -204,7 +204,7 @@ SessionManager::RecoverKeys SessionManager::recover(const QString& pin, const QS
     }
 
     // Step 5: Initialize, load mnemonic, and export keys
-    return initializeAndLoad(pin, puk, pairingPassword, mnemonic, QString(), QStringList());
+    return initializeAndLoad(pin, puk, pairingPassword, mnemonic, QString(), QStringList(), false);
 }
 
 SessionManager::RecoverKeys SessionManager::load(const QString& pin, const QString& puk, const QString& pairingPassword,
@@ -253,13 +253,19 @@ SessionManager::RecoverKeys SessionManager::load(const QString& pin, const QStri
         return RecoverKeys();
     }
 
-    if (m_state != SessionState::EmptyKeycard) {
+    auto cardContainsKeyOnly = false;
+    auto status = getStatus();
+    if (!!status.keycardInfo && !status.keycardInfo->instanceUID.isEmpty() && status.keycardInfo->keyUID.isEmpty()) {
+        cardContainsKeyOnly = true;
+    }
+
+    if (!cardContainsKeyOnly && m_state != SessionState::EmptyKeycard) {
         setError(QString("Card is not empty (state: %1). Use Recover to overwrite an existing keycard").arg(currentStateString()));
         return RecoverKeys();
     }
 
     // Step 3: Initialize, load mnemonic, and export keys
-    return initializeAndLoad(pin, puk, pairingPassword, mnemonic, metadataName, metadataPaths);
+    return initializeAndLoad(pin, puk, pairingPassword, mnemonic, metadataName, metadataPaths, cardContainsKeyOnly);
 }
 
 SessionManager::ExtendedPublicKey SessionManager::exportExtendedPublicKey(const QString& keyUid, const QString& pin,

@@ -217,7 +217,7 @@ private:
 
     RecoverKeys initializeAndLoad(const QString& pin, const QString& puk, const QString& pairingPassword,
                                   const QString& mnemonic, const QString& metadataName,
-                                  const QStringList& metadataPaths);
+                                  const QStringList& metadataPaths, const bool cardContainsKeyOnly);
 
     // Fetch fresh app status from card and publish status-changed signal
     void updateAndPublishStatus(bool authorized);
