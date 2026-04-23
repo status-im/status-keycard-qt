@@ -135,6 +135,8 @@ public:
 
     Metadata getKeycardMetadata(const QString& pin, const QString& storageFilePath, bool logEnabled = false,
         const QString& logFilePath = QString());
+    bool storeKeycardMetadata(const QString& pin, const QString& name, const QStringList& paths,
+        const QString& storageFilePath, bool logEnabled = false, const QString& logFilePath = QString());
 
     struct SignResult {
         QString r;   // 32-byte hex
