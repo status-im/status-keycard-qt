@@ -431,6 +431,41 @@ QJsonObject RpcService::handleGetKeycardMetadata(quint64 id, const QJsonObject& 
     return createSuccessResponse(id, meta);
 }
 
+QJsonObject RpcService::handleStoreKeycardMetadata(quint64 id, const QJsonObject& params) {
+    QString storagePath = params["storageFilePath"].toString();
+    QString pin = params["pin"].toString();
+    QString name = params["name"].toString();
+    QJsonArray pathsArray = params["paths"].toArray();
+    bool logEnabled = params["logEnabled"].toBool(false);
+    QString logFilePath = params["logFilePath"].toString();
+
+    if (storagePath.isEmpty()) {
+        return createErrorResponse(id, -32602, "Missing required parameter: storageFilePath");
+    }
+
+    if (pin.length() != PinLength) {
+        return createErrorResponse(id, -32602, "PIN must be " + QString::number(PinLength) + " digits");
+    }
+
+    QJsonObject validationError = validateAndConfigureStorage(id, storagePath);
+    if (!validationError.isEmpty()) {
+        return validationError;
+    }
+
+    QStringList paths;
+    for (const QJsonValue& val : pathsArray) {
+        paths.append(val.toString());
+    }
+
+    bool success = m_sessionManager->storeKeycardMetadata(pin, name, paths, storagePath, logEnabled, logFilePath);
+    SignalManager::instance()->emitStatusChanged(m_sessionManager->getStatus());
+    if (!success) {
+        return createErrorResponse(id, -32000, m_sessionManager->lastError());
+    }
+
+    return createSuccessResponse(id, QJsonObject());
+}
+
 QJsonObject RpcService::handleSign(quint64 id, const QJsonObject& params) {
     QString storagePath = params["storageFilePath"].toString();
     QString keyUid = params["keyUid"].toString();

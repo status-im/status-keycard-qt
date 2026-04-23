@@ -107,6 +107,7 @@ private:
     QJsonObject handleChangeKeycardPUK(quint64 id, const QJsonObject& params);
     QJsonObject handleUnblockUsingPUK(quint64 id, const QJsonObject& params);
     QJsonObject handleGetKeycardMetadata(quint64 id, const QJsonObject& params);
+    QJsonObject handleStoreKeycardMetadata(quint64 id, const QJsonObject& params);
     QJsonObject handleSign(quint64 id, const QJsonObject& params);
     QJsonObject handleFactoryResetKeycard(quint64 id, const QJsonObject& params);
 
