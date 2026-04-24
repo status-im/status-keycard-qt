@@ -47,6 +47,7 @@ QJsonObject RpcService::handleRecover(quint64 id, const QJsonObject& params) {
     QString puk = params["puk"].toString();
     QString pairingPassword = params["pairingPassword"].toString();
     QString mnemonic = params["mnemonic"].toString();
+    QString metadataName = params["metadataName"].toString();
     QString keycardUid = remove0xPrefix(params["keycardUid"].toString());
     bool logEnabled = params["logEnabled"].toBool(false);
     QString logFilePath = params["logFilePath"].toString();
@@ -67,12 +68,21 @@ QJsonObject RpcService::handleRecover(quint64 id, const QJsonObject& params) {
         return createErrorResponse(id, -32602, "mnemonic is required");
     }
 
+    QStringList metadataPaths;
+    if (params.contains("metadataPaths") && params["metadataPaths"].isArray()) {
+        const QJsonArray pathsArray = params["metadataPaths"].toArray();
+        for (const QJsonValue& val : pathsArray) {
+            metadataPaths.append(val.toString());
+        }
+    }
+
     QJsonObject validationError = validateAndConfigureStorage(id, storagePath);
     if (!validationError.isEmpty()) {
         return validationError;
     }
 
-    SessionManager::RecoverKeys keys = m_sessionManager->recover(pin, puk, pairingPassword, mnemonic, logEnabled, logFilePath, keycardUid);
+    SessionManager::RecoverKeys keys = m_sessionManager->recover(pin, puk, pairingPassword, mnemonic,
+        metadataName, metadataPaths, logEnabled, logFilePath, keycardUid);
     SignalManager::instance()->emitStatusChanged(m_sessionManager->getStatus());
     if (!m_sessionManager->lastError().isEmpty()) {
         return createErrorResponse(id, -32000, m_sessionManager->lastError());
