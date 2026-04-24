@@ -92,6 +92,7 @@ public:
     };
     RecoverKeys exportRecoverKeys(bool isMainCommand = true);
     RecoverKeys recover(const QString& pin, const QString& puk, const QString& pairingPassword, const QString& mnemonic,
+                        const QString& metadataName = QString(), const QStringList& metadataPaths = QStringList(),
                         bool logEnabled = false, const QString& logFilePath = QString(),
                         const QString& keycardUid = QString());
     RecoverKeys load(const QString& pin, const QString& puk, const QString& pairingPassword, const QString& mnemonic,

@@ -147,7 +147,8 @@ SessionManager::RecoverKeys SessionManager::initializeAndLoad(const QString& pin
 }
 
 SessionManager::RecoverKeys SessionManager::recover(const QString& pin, const QString& puk, const QString& pairingPassword,
-                                const QString& mnemonic, bool logEnabled, const QString& logFilePath,
+                                const QString& mnemonic, const QString& metadataName, const QStringList& metadataPaths,
+                                bool logEnabled, const QString& logFilePath,
                                 const QString& keycardUid)
 {
     qDebug() << "StatusKeycardQt::SessionManager::recover()";
@@ -204,7 +205,7 @@ SessionManager::RecoverKeys SessionManager::recover(const QString& pin, const QS
     }
 
     // Step 5: Initialize, load mnemonic, and export keys
-    return initializeAndLoad(pin, puk, pairingPassword, mnemonic, QString(), QStringList(), false);
+    return initializeAndLoad(pin, puk, pairingPassword, mnemonic, metadataName, metadataPaths, false);
 }
 
 SessionManager::RecoverKeys SessionManager::load(const QString& pin, const QString& puk, const QString& pairingPassword,
