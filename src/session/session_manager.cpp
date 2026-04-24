@@ -223,6 +223,13 @@ void SessionManager::onCardInitialized(const Keycard::CardInitializationResult& 
         return;
     }
 
+    // Populate metadata from card before emitting the state change signal carries the card's metadata.
+    if (result.appInfo.initialized) {
+        m_metadata = getMetadata();
+    } else {
+        m_metadata = Metadata();
+    }
+
     // Determine state based on card status
     if (!result.appInfo.initialized) {
         qDebug() << "StatusKeycardQt::SessionManager: Card is empty (not initialized)";
@@ -424,6 +431,7 @@ bool SessionManager::initialize(const QString& pin, const QString& puk, const QS
         m_currentCardUID.clear();
         m_appInfo = m_commMgr->applicationInfo();
         m_appStatus = m_commMgr->applicationStatus();
+        m_metadata = Metadata();
         setState(SessionState::Ready);
         return true;
     } else {
@@ -675,6 +683,7 @@ bool SessionManager::factoryReset()
     m_appInfo = m_commMgr->applicationInfo();
     m_currentCardUID.clear();
     m_appStatus = m_commMgr->applicationStatus();
+    m_metadata = Metadata();
     setState(SessionState::EmptyKeycard);
 
     return true;
