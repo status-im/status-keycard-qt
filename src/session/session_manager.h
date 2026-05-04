@@ -230,6 +230,7 @@ private:
     QByteArray exportKeyExtendedInternal(bool derive, bool makeCurrent, const QString& path);
     ExportPublicKeyResult exportPublicKeyInternal(const QStringList& paths, bool exportPrivate, bool exportMasterAddress);
     static KeyPair parseExportedKey(const QByteArray& data);
+    static Metadata parseMetadataTlv(const QByteArray& data);
 
     // State
     SessionState m_state;
