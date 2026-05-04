@@ -224,8 +224,8 @@ void SessionManager::onCardInitialized(const Keycard::CardInitializationResult& 
     }
 
     // Populate metadata from card before emitting the state change signal carries the card's metadata.
-    if (result.appInfo.initialized) {
-        m_metadata = getMetadata();
+    if (result.appInfo.initialized && result.hasMetadata) {
+        m_metadata = parseMetadataTlv(result.metadataTlv);
     } else {
         m_metadata = Metadata();
     }
@@ -1091,6 +1091,17 @@ SessionManager::Metadata SessionManager::getMetadata(bool isMainCommand)
         return metadata;
     }
 
+    return parseMetadataTlv(metadataData);
+}
+
+SessionManager::Metadata SessionManager::parseMetadataTlv(const QByteArray& metadataData)
+{
+    Metadata metadata;
+
+    if (metadataData.isEmpty()) {
+        return metadata;
+    }
+
     // Parse metadata using Go's custom binary format (matching types/metadata.go ParseMetadata())
     // Format: [version+namelen][name][start/count pairs in LEB128]
     //   Byte 0: version (3 bits) + name length (5 bits)
@@ -1098,12 +1109,6 @@ SessionManager::Metadata SessionManager::getMetadata(bool isMainCommand)
     //   Remaining: series of start/count LEB128 pairs for wallet paths
 
     int offset = 0;
-    if (offset >= metadataData.size()) {
-        qDebug() << "StatusKeycardQt::SessionManager: Metadata too short";
-        return metadata;
-    }
-
-    // Parse header byte
     uint8_t header = static_cast<uint8_t>(metadataData[offset++]);
     uint8_t version = header >> 5;
     uint8_t namelen = header & 0x1F;
