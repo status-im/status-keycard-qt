@@ -259,6 +259,15 @@ QJsonObject RpcService::loginKeysToJson(const SessionManager::LoginKeys& keys) {
     keysObject["whisperPrivateKey"] = whisperKey;
     keysObject["encryptionPrivateKey"] = encryptionKey;
 
+    if (!keys.extendedPublicKey.xpub.isEmpty()) {
+        QJsonObject epk;
+        epk["address"] = ensure0xPrefix(keys.extendedPublicKey.address);
+        epk["publicKey"] = ensure0xPrefix(keys.extendedPublicKey.publicKey);
+        epk["chainCode"] = ensure0xPrefix(keys.extendedPublicKey.chainCode);
+        epk["xpub"] = keys.extendedPublicKey.xpub;
+        keysObject["extendedPublicKey"] = epk;
+    }
+
     QJsonObject result;
     result["keys"] = keysObject;
 

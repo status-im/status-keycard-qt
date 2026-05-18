@@ -12,6 +12,7 @@ QJsonObject RpcService::handleLogin(quint64 id, const QJsonObject& params) {
     QString storagePath = params["storageFilePath"].toString();
     QString keyUid = params["keyUid"].toString();
     QString pin = params["pin"].toString();
+    QString xPubPath = params["xPubPath"].toString();
     bool logEnabled = params["logEnabled"].toBool(false);
     QString logFilePath = params["logFilePath"].toString();
     if (storagePath.isEmpty()) {
@@ -32,7 +33,7 @@ QJsonObject RpcService::handleLogin(quint64 id, const QJsonObject& params) {
         return validationError;
     }
 
-    SessionManager::LoginKeys keys = m_sessionManager->login(keyUidWithout0x, pin, logEnabled, logFilePath);
+    SessionManager::LoginKeys keys = m_sessionManager->login(keyUidWithout0x, pin, xPubPath, logEnabled, logFilePath);
     SignalManager::instance()->emitStatusChanged(m_sessionManager->getStatus());
     if (!m_sessionManager->lastError().isEmpty()) {
         return createErrorResponse(id, -32000, m_sessionManager->lastError());

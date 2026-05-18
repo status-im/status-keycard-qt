@@ -76,12 +76,25 @@ public:
         QString chainCode;   // Optional (for extended keys)
     };
 
+    struct ExtendedPublicKey {
+        QString address;
+        QString publicKey;
+        QString chainCode;
+        QString xpub;       // Base58Check-encoded BIP32 extended public key
+    };
+    ExtendedPublicKey exportExtendedPublicKey(const QString& path);
+    ExtendedPublicKey exportExtendedPublicKey(const QString& keyUid, const QString& pin, const QString& path,
+        const QString& storageFilePath, bool logEnabled = false, const QString& logFilePath = QString());
+
     struct LoginKeys {
         KeyPair whisperPrivateKey;
         KeyPair encryptionPrivateKey;
+        ExtendedPublicKey extendedPublicKey; // populated only when xPubPath provided to composite login()
     };
     LoginKeys exportLoginKeys(bool isMainCommand = true);
-    LoginKeys login(const QString& keyUid, const QString& pin, bool logEnabled = false, const QString& logFilePath = QString());
+    LoginKeys login(const QString& keyUid, const QString& pin,
+                    const QString& xPubPath = QString(),
+                    bool logEnabled = false, const QString& logFilePath = QString());
 
     struct RecoverKeys {
         LoginKeys loginKeys;
@@ -98,16 +111,6 @@ public:
     RecoverKeys load(const QString& pin, const QString& puk, const QString& pairingPassword, const QString& mnemonic,
                      const QString& metadataName = QString(), const QStringList& metadataPaths = QStringList(),
                      bool logEnabled = false, const QString& logFilePath = QString());
-
-    struct ExtendedPublicKey {
-        QString address;
-        QString publicKey;
-        QString chainCode;
-        QString xpub;       // Base58Check-encoded BIP32 extended public key
-    };
-    ExtendedPublicKey exportExtendedPublicKey(const QString& path);
-    ExtendedPublicKey exportExtendedPublicKey(const QString& keyUid, const QString& pin, const QString& path,
-        const QString& storageFilePath, bool logEnabled = false, const QString& logFilePath = QString());
 
     struct ExportedKeyPair {
         QString address;

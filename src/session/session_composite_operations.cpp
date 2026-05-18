@@ -43,9 +43,10 @@ bool SessionManager::validateCompositeKeycardUid(const QString& keycardUid, cons
     return true;
 }
 
-SessionManager::LoginKeys SessionManager::login(const QString& keyUid, const QString& pin, bool logEnabled, const QString& logFilePath)
+SessionManager::LoginKeys SessionManager::login(const QString& keyUid, const QString& pin,
+    const QString& xPubPath, bool logEnabled, const QString& logFilePath)
 {
-    qDebug() << "StatusKeycardQt::SessionManager::login()";
+    qDebug() << "StatusKeycardQt::SessionManager::login() xPubPath:" << xPubPath;
 
     // Stop any existing session to release the PCSC card handle
     stop();
@@ -110,7 +111,22 @@ SessionManager::LoginKeys SessionManager::login(const QString& keyUid, const QSt
     }
 
     // Step 4: Export login keys (not main command — batch is already open)
-    return exportLoginKeys(false);
+    LoginKeys keys = exportLoginKeys(false);
+    if (!m_lastError.isEmpty()) {
+        return LoginKeys();
+    }
+
+    // Step 5: Optionally derive an extended public key at xPubPath while we're still
+    // authorized and inside the open batch.
+    if (!xPubPath.isEmpty()) {
+        ExtendedPublicKey epk = exportExtendedPublicKey(xPubPath);
+        if (!m_lastError.isEmpty()) {
+            return LoginKeys();
+        }
+        keys.extendedPublicKey = epk;
+    }
+
+    return keys;
 }
 
 SessionManager::RecoverKeys SessionManager::initializeAndLoad(const QString& pin, const QString& puk,
