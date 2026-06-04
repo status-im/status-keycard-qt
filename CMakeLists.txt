@@ -16,7 +16,11 @@ set(STATUS_KEYCARD_BUILD_EXAMPLES ${BUILD_EXAMPLES})  # Save status-keycard-qt e
 set(STATUS_KEYCARD_BUILD_SHARED_LIBS ${BUILD_SHARED_LIBS})  # Save status-keycard-qt library type preference
 
 # Find dependencies
-find_package(Qt6 REQUIRED COMPONENTS Core Nfc Concurrent)
+find_package(Qt6 REQUIRED COMPONENTS Core Concurrent)
+
+if(IOS OR ANDROID)
+    find_package(Qt6 REQUIRED COMPONENTS Nfc)
+endif()
 
 # OpenSSL is REQUIRED for key derivation (secp256k1 public key derivation)
 # For Android and iOS, we use manually provided paths instead of find_package
@@ -125,11 +129,14 @@ target_include_directories(status-keycard-qt
 target_link_libraries(status-keycard-qt
     PUBLIC
         Qt6::Core
-        Qt6::Nfc
         Qt6::Concurrent
     PRIVATE
         keycard-qt  # Linked privately so it's absorbed into libstatus-keycard-qt
 )
+
+if(IOS OR ANDROID)
+    target_link_libraries(status-keycard-qt PUBLIC Qt6::Nfc)
+endif()
 
 # When building as a static library, bundle keycard-qt into status-keycard-qt
 # This ensures consumers only need to link against status-keycard-qt
