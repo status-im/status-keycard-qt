@@ -179,9 +179,6 @@ private slots:
         QVERIFY(!m_manager->unblockPIN("123456123456", "654321"));
         QVERIFY(!m_manager->factoryReset());
 
-        QVector<int> mnemonic = m_manager->generateMnemonic(12);
-        QVERIFY(mnemonic.isEmpty());
-
         QString keyUID = m_manager->loadMnemonic("test mnemonic", "");
         QVERIFY(keyUID.isEmpty());
     }

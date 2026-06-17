@@ -554,41 +554,6 @@ bool SessionManager::unblockPIN(const QString& puk, const QString& newPIN)
 
 // Key Operations
 
-QVector<int> SessionManager::generateMnemonic(int length)
-{
-    QMutexLocker locker(&m_operationMutex);
-
-    if (!ensureStarted()) {
-        return QVector<int>();
-    }
-
-    int checksumSize = 4; // Default
-    if (length == 15) checksumSize = 5;
-    else if (length == 18) checksumSize = 6;
-    else if (length == 21) checksumSize = 7;
-    else if (length == 24) checksumSize = 8;
-
-    auto cmd = std::make_unique<Keycard::GenerateMnemonicCommand>(checksumSize);
-    Keycard::CommandResult result = m_commMgr->executeCommandSync(std::move(cmd));
-
-    if (!result.success && result.reason == Keycard::CommandResultType::Cancelled) {
-        setState(SessionState::Cancelled);
-        return QVector<int>();
-    }
-
-    if (result.success) {
-        QVariantList list = result.data.toList();
-        QVector<int> indexes;
-        for (const QVariant& v : list) {
-            indexes.append(v.toInt());
-        }
-        return indexes;
-    } else {
-        setError(result.error);
-        return QVector<int>();
-    }
-}
-
 QString SessionManager::loadMnemonic(const QString& mnemonic, const QString& passphrase)
 {
     QMutexLocker locker(&m_operationMutex);

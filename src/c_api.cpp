@@ -2,14 +2,10 @@
 #include "rpc/rpc_service.h"
 #include "session/session_manager.h"
 #include "signal_manager.h"
-#include "flow/flow_manager.h"
 #include "storage/file_pairing_storage.h"
 #include "keycard-qt/communication_manager.h"
 #include <QString>
 #include <QObject>
-#include <QThread>
-#include <QJsonDocument>
-#include <QJsonObject>
 #include <memory>
 #include <cstring>
 
@@ -19,7 +15,7 @@ struct StatusKeycardContextImpl {
     StatusKeycard::SignalManager* signalManager;
     SignalCallback signalCallback;
     std::shared_ptr<Keycard::CommunicationManager> commMgr;  // Communication manager for SessionManager
-    std::shared_ptr<Keycard::CommandSet> commandSet;  // Single CommandSet shared by both SessionManager and FlowManager
+    std::shared_ptr<Keycard::CommandSet> commandSet;  // CommandSet used by SessionManager
     std::shared_ptr<Keycard::KeycardChannel> channel;  // Global channel instance
     std::shared_ptr<Keycard::IPairingStorage> pairingStorage;
 
@@ -44,10 +40,10 @@ struct StatusKeycardContextImpl {
         // Create password provider
         auto passwordProvider = [](const QString& cardUID) { return "KeycardDefaultPairing"; };
 
-        // Create single CommandSet - shared by both SessionManager and FlowManager
+        // Create CommandSet used by SessionManager
         commandSet = std::make_shared<Keycard::CommandSet>(
             channel, pairingStorage, passwordProvider);
-        qDebug() << "StatusKeycardQt::StatusKeycardContextImpl: Created unified CommandSet";
+        qDebug() << "StatusKeycardQt::StatusKeycardContextImpl: Created CommandSet";
 
         // Create and initialize CommunicationManager using CommandSet
         // CommunicationManager connects to CommandSet signals (cardReady, cardLost)
@@ -57,8 +53,7 @@ struct StatusKeycardContextImpl {
         if (!commMgr->init(commandSet)) {
             qWarning() << "StatusKeycardContextImpl: Failed to initialize CommunicationManager";
         }
-        qDebug() << "StatusKeycardQt::StatusKeycardContextImpl: CommunicationManager initialized with unified CommandSet";
-        qDebug() << "StatusKeycardQt::StatusKeycardContextImpl: Single CommandSet - no race conditions possible!";
+        qDebug() << "StatusKeycardQt::StatusKeycardContextImpl: CommunicationManager initialized with CommandSet";
 
         // Create RPC service and pass CommunicationManager
         rpcService = std::make_unique<StatusKeycard::RpcService>();
@@ -73,20 +68,6 @@ struct StatusKeycardContextImpl {
             // Emit status-changed signal
             auto status = rpcService->sessionManager()->getStatus();
             signalManager->emitStatusChanged(status);
-        });
-
-        // Connect FlowManager signals to SignalManager
-        QObject::connect(StatusKeycard::FlowManager::instance(), &StatusKeycard::FlowManager::flowSignal,
-                        [this](const QString& type, const QJsonObject& event) {
-            // Build signal JSON
-            QJsonObject signal;
-            signal["type"] = type;
-            signal["event"] = event;
-
-            QJsonDocument doc(signal);
-            QString jsonString = QString::fromUtf8(doc.toJson(QJsonDocument::Compact));
-
-            signalManager->emitSignal(jsonString);
         });
 
         // Connect channel state changes to SignalManager
@@ -154,29 +135,8 @@ static void ensure_global_context() {
     }
 }
 
-// Public function that returns JSON string (matching nim-keycard-go expectation)
-char* KeycardInitializeRPC(void) {
-    // Create global context if needed
-    ensure_global_context();
-
-    // Return success response in Go format: {"error":""}
-    const char* response = R"({"error":""})";
-    return strdup(response);
-}
-
-// Context-based API for testing and advanced usage
-StatusKeycardContext KeycardCreateContext(void) {
-    return KeycardInitializeRPCInternal();
-}
-
-void KeycardDestroyContext(StatusKeycardContext ctx) {
-    if (ctx) {
-        StatusKeycardContextImpl* impl = reinterpret_cast<StatusKeycardContextImpl*>(ctx);
-        delete impl;
-    }
-}
-
-char* KeycardCallRPCWithContext(StatusKeycardContext ctx, const char* payload_json) {
+// Internal implementations behind the no-context wrappers below.
+static char* KeycardCallRPCWithContext(StatusKeycardContext ctx, const char* payload_json) {
     qDebug() << "StatusKeycardQt::C API: KeycardCallRPCWithContext() called";
     qDebug() << "StatusKeycardQt::C API: Payload:" << (payload_json ? payload_json : "NULL");
 
@@ -199,7 +159,7 @@ char* KeycardCallRPCWithContext(StatusKeycardContext ctx, const char* payload_js
     return strdup(response.toUtf8().constData());
 }
 
-void KeycardSetSignalEventCallbackWithContext(StatusKeycardContext ctx, SignalCallback callback) {
+static void KeycardSetSignalEventCallbackWithContext(StatusKeycardContext ctx, SignalCallback callback) {
     if (!ctx) {
         return;
     }
@@ -215,243 +175,6 @@ void Free(void* param) {
     }
 }
 
-void ResetAPIWithContext(StatusKeycardContext ctx) {
-    if (!ctx) {
-        return;
-    }
-
-    StatusKeycardContextImpl* impl = reinterpret_cast<StatusKeycardContextImpl*>(ctx);
-
-    // Stop the session
-    if (impl->rpcService && impl->rpcService->sessionManager()) {
-        impl->rpcService->sessionManager()->stop();
-    }
-
-    // The following block handles the case where the keycard was factory resetted or recovered during onboarding,
-    // and the keycard was not removed from the reader, without this block, this lib will be using old cached state.
-#if not defined(Q_OS_ANDROID) && not defined(Q_OS_IOS)
-    // Restart card detection so the CommunicationManager runs the full
-    // initialization sequence (SELECT force=true + pairing + secure channel
-    // + get status). This refreshes all cached state (appInfo, appStatus)
-    // so subsequent operations see up-to-date card data.
-    if (impl->commMgr) {
-        impl->commMgr->stopDetection();
-        impl->commMgr->startDetection();
-    }
-#endif
-
-    // Reset RPC service
-    impl->rpcService.reset();
-    impl->rpcService = std::make_unique<StatusKeycard::RpcService>();
-    impl->rpcService->setCommunicationManager(impl->commMgr);
-
-    // Reconnect signals
-    QObject::connect(impl->rpcService->sessionManager(), &StatusKeycard::SessionManager::stateChanged,
-                    [impl](StatusKeycard::SessionState, StatusKeycard::SessionState) {
-        auto status = impl->rpcService->sessionManager()->getStatus();
-        impl->signalManager->emitStatusChanged(status);
-    });
-}
-
-// ============================================================================
-// Flow API (Deprecated but kept for compatibility)
-// ============================================================================
-
-char* KeycardInitFlowWithContext(StatusKeycardContext ctx, const char* storageDir) {
-    if (!ctx || !storageDir) {
-        const char* error = R"({"success": false, "error": "Invalid parameters"})";
-        return strdup(error);
-    }
-
-    StatusKeycardContextImpl* impl = reinterpret_cast<StatusKeycardContextImpl*>(ctx);
-
-    // Initialize FlowManager with storage directory
-    if (auto fileStorage = std::dynamic_pointer_cast<StatusKeycard::FilePairingStorage>(impl->pairingStorage)) {
-        if (!fileStorage->setPath(QString::fromUtf8(storageDir))) {
-            const char* error = R"({"success": false, "error": "Failed to create pairing storage"})";
-            return strdup(error);
-        }
-    }
-    // Use the same unified CommandSet and CommunicationManager for FlowManager
-    // This ensures flows and session operations share the same command queue
-    bool success = StatusKeycard::FlowManager::instance()->init(impl->commMgr);
-
-    if (!success) {
-        const char* error = R"({"success": false, "error": "Failed to initialize FlowManager"})";
-        return strdup(error);
-    }
-
-    qDebug() << "StatusKeycardQt::C API: FlowManager initialized with shared CommunicationManager";
-    qDebug() << "StatusKeycardQt::C API: SessionManager and FlowManager now share command queue!";
-
-
-    const char* response = R"({"success": true})";
-    return strdup(response);
-}
-
-char* KeycardStartFlowWithContext(StatusKeycardContext ctx, int flowType, const char* jsonParams) {
-    if (!ctx) {
-        const char* error = R"({"success": false, "error": "Invalid context"})";
-        return strdup(error);
-    }
-
-    // Parse JSON parameters
-    QJsonObject params;
-    if (jsonParams && strlen(jsonParams) > 0) {
-        QJsonDocument doc = QJsonDocument::fromJson(QByteArray(jsonParams));
-        if (doc.isObject()) {
-            params = doc.object();
-        }
-    }
-
-    // IMPORTANT: Marshal to Qt main thread!
-    // This function is called from Nim threads, but startFlow() creates Qt objects
-    // and manipulates state that must be on the Qt main thread.
-    bool success = false;
-
-    // Check if we're already on the Qt main thread
-    auto flowManager = StatusKeycard::FlowManager::instance();
-    if (QThread::currentThread() == flowManager->thread()) {
-        // Already on Qt thread - call directly to avoid deadlock
-        success = flowManager->startFlow(flowType, params);
-    } else {
-        // Different thread - marshal to Qt thread
-        QMetaObject::invokeMethod(flowManager,
-                                 [flowType, params, &success]() {
-            success = StatusKeycard::FlowManager::instance()->startFlow(flowType, params);
-        }, Qt::BlockingQueuedConnection);
-    }
-
-    if (success) {
-        const char* response = R"({"success": true})";
-        return strdup(response);
-    } else {
-        QString error = StatusKeycard::FlowManager::instance()->lastError();
-        QJsonObject errorObj;
-        errorObj["success"] = false;
-        errorObj["error"] = error;
-        QByteArray json = QJsonDocument(errorObj).toJson(QJsonDocument::Compact);
-        return strdup(json.constData());
-    }
-}
-
-char* KeycardResumeFlowWithContext(StatusKeycardContext ctx, const char* jsonParams) {
-    if (!ctx) {
-        const char* error = R"({"success": false, "error": "Invalid context"})";
-        return strdup(error);
-    }
-
-    // Parse JSON parameters
-    QJsonObject params;
-    if (jsonParams && strlen(jsonParams) > 0) {
-        QJsonDocument doc = QJsonDocument::fromJson(QByteArray(jsonParams));
-        if (doc.isObject()) {
-            params = doc.object();
-        }
-    }
-
-    // IMPORTANT: Marshal to Qt main thread (same reason as startFlow)
-    bool success = false;
-
-    // Check if we're already on the Qt main thread
-    auto flowManager = StatusKeycard::FlowManager::instance();
-    if (QThread::currentThread() == flowManager->thread()) {
-        // Already on Qt thread - call directly to avoid deadlock
-        success = flowManager->resumeFlow(params);
-    } else {
-        // Different thread - marshal to Qt thread
-        QMetaObject::invokeMethod(flowManager,
-                                 [params, &success]() {
-            success = StatusKeycard::FlowManager::instance()->resumeFlow(params);
-        }, Qt::BlockingQueuedConnection);
-    }
-
-    if (success) {
-        const char* response = R"({"success": true})";
-        return strdup(response);
-    } else {
-        QString error = StatusKeycard::FlowManager::instance()->lastError();
-        QJsonObject errorObj;
-        errorObj["success"] = false;
-        errorObj["error"] = error;
-        QByteArray json = QJsonDocument(errorObj).toJson(QJsonDocument::Compact);
-        return strdup(json.constData());
-    }
-}
-
-char* KeycardCancelFlowWithContext(StatusKeycardContext ctx) {
-    if (!ctx) {
-        const char* error = R"({"success": false, "error": "Invalid context"})";
-        return strdup(error);
-    }
-
-    // IMPORTANT: Marshal to Qt main thread (same reason as startFlow)
-    bool success = false;
-
-    // Check if we're already on the Qt main thread
-    auto flowManager = StatusKeycard::FlowManager::instance();
-    if (QThread::currentThread() == flowManager->thread()) {
-        // Already on Qt thread - call directly to avoid deadlock
-        success = flowManager->cancelFlow();
-    } else {
-        // Different thread - marshal to Qt thread
-        QMetaObject::invokeMethod(flowManager,
-                                 [&success]() {
-            success = StatusKeycard::FlowManager::instance()->cancelFlow();
-        }, Qt::BlockingQueuedConnection);
-    }
-
-    if (success) {
-        const char* response = R"({"success": true})";
-        return strdup(response);
-    } else {
-        const char* error = R"({"success": false, "error": "Failed to cancel flow"})";
-        return strdup(error);
-    }
-}
-
-// ============================================================================
-// Mocked Functions (For testing)
-// ============================================================================
-
-char* MockedLibRegisterKeycardWithContext(StatusKeycardContext ctx, int cardIndex, int readerState,
-                                int keycardState, const char* mockedKeycard,
-                                const char* mockedKeycardHelper) {
-    (void)ctx;
-    (void)cardIndex;
-    (void)readerState;
-    (void)keycardState;
-    (void)mockedKeycard;
-    (void)mockedKeycardHelper;
-    const char* response = R"({"success": true, "message": "Mocked functions not implemented in Qt version"})";
-    return strdup(response);
-}
-
-char* MockedLibReaderPluggedInWithContext(StatusKeycardContext ctx) {
-    (void)ctx;
-    const char* response = R"({"success": true})";
-    return strdup(response);
-}
-
-char* MockedLibReaderUnpluggedWithContext(StatusKeycardContext ctx) {
-    (void)ctx;
-    const char* response = R"({"success": true})";
-    return strdup(response);
-}
-
-char* MockedLibKeycardInsertedWithContext(StatusKeycardContext ctx, int cardIndex) {
-    (void)ctx;
-    (void)cardIndex;
-    const char* response = R"({"success": true})";
-    return strdup(response);
-}
-
-char* MockedLibKeycardRemovedWithContext(StatusKeycardContext ctx) {
-    (void)ctx;
-    const char* response = R"({"success": true})";
-    return strdup(response);
-}
-
 // ============================================================================
 // Compatibility Wrappers (No context parameter - for Nim compatibility)
 // ============================================================================
@@ -465,71 +188,10 @@ void KeycardSetSignalEventCallback(SignalCallback callback) {
     qDebug() << "StatusKeycardQt::C API: Signal callback registered successfully";
 }
 
-// Wrapper: resetAPI (Nim expects this signature)
-void ResetAPI() {
-    if (g_global_context) {
-        ResetAPIWithContext(g_global_context);
-    }
-}
-
-// Wrapper: keycardInitFlow (Nim expects this signature)
-char* KeycardInitFlow(const char* storageDir) {
-    ensure_global_context();
-    return KeycardInitFlowWithContext(g_global_context, storageDir);
-}
-
-// Wrapper: keycardStartFlow (Nim expects this signature)
-char* KeycardStartFlow(int flowType, const char* jsonParams) {
-    ensure_global_context();
-    return KeycardStartFlowWithContext(g_global_context, flowType, jsonParams);
-}
-
-// Wrapper: keycardResumeFlow (Nim expects this signature)
-char* KeycardResumeFlow(const char* jsonParams) {
-    ensure_global_context();
-    return KeycardResumeFlowWithContext(g_global_context, jsonParams);
-}
-
-// Wrapper: keycardCancelFlow (Nim expects this signature)
-char* KeycardCancelFlow() {
-    ensure_global_context();
-    return KeycardCancelFlowWithContext(g_global_context);
-}
-
-// NOTE: keycardInitializeRPC is removed - Nim uses KeycardInitializeRPC directly
-
 // Wrapper: keycardCallRPC (Nim expects this signature)
 char* KeycardCallRPC(const char* params) {
     ensure_global_context();
     return KeycardCallRPCWithContext(g_global_context, params);
-}
-
-// Wrapper: Mocked functions without context
-char* MockedLibRegisterKeycard(int cardIndex, int readerState, int keycardState,
-                               const char* mockedKeycard, const char* mockedKeycardHelper) {
-    ensure_global_context();
-    return MockedLibRegisterKeycardWithContext(g_global_context, cardIndex, readerState, keycardState,
-                                   mockedKeycard, mockedKeycardHelper);
-}
-
-char* MockedLibReaderPluggedIn() {
-    ensure_global_context();
-    return MockedLibReaderPluggedInWithContext(g_global_context);
-}
-
-char* MockedLibReaderUnplugged() {
-    ensure_global_context();
-    return MockedLibReaderUnpluggedWithContext(g_global_context);
-}
-
-char* MockedLibKeycardInserted(int cardIndex) {
-    ensure_global_context();
-    return MockedLibKeycardInsertedWithContext(g_global_context, cardIndex);
-}
-
-char* MockedLibKeycardRemoved() {
-    ensure_global_context();
-    return MockedLibKeycardRemovedWithContext(g_global_context);
 }
 
 } // extern "C"

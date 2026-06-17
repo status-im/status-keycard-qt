@@ -96,23 +96,6 @@ set(SOURCES
     src/signal_manager.cpp
     src/rpc/rpc_service.cpp
     src/rpc/rpc_composite_handlers.cpp
-    # Flow API
-    src/flow/flow_signals.cpp
-    src/flow/flow_state_machine.cpp
-    src/flow/flow_manager.cpp
-    src/flow/flows/flow_base.cpp
-    # Flow implementations
-    src/flow/flows/login_flow.cpp
-    src/flow/flows/get_app_info_flow.cpp
-    src/flow/flows/recover_account_flow.cpp
-    src/flow/flows/load_account_flow.cpp
-    src/flow/flows/sign_flow.cpp
-    src/flow/flows/change_pin_flow.cpp
-    src/flow/flows/change_puk_flow.cpp
-    src/flow/flows/change_pairing_flow.cpp
-    src/flow/flows/export_public_flow.cpp
-    src/flow/flows/get_metadata_flow.cpp
-    src/flow/flows/store_metadata_flow.cpp
 )
 
 # Create library (shared or static based on BUILD_SHARED_LIBS)

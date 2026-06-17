@@ -85,7 +85,6 @@ QString RpcService::processRequest(const QString& requestJson) {
     }
 
     const QHash<QString, HandlerFunction> lifeCycleHandlers = {
-        {"keycard.Start", &RpcService::handleStart},
         {"keycard.Stop", &RpcService::handleStop},
         {"keycard.CancelCurrentOperation", &RpcService::handleCancelCurrentOperation},
     };
@@ -105,34 +104,11 @@ QString RpcService::processRequest(const QString& requestJson) {
         {"keycard.FactoryResetKeycard", &RpcService::handleFactoryResetKeycard},
     };
 
-    const QHash<QString, HandlerFunction> singleStepHandlers = {
-        {"keycard.GetStatus", &RpcService::handleGetStatus},
-        {"keycard.Initialize", &RpcService::handleInitialize},
-        {"keycard.Authorize", &RpcService::handleAuthorize},
-        {"keycard.ChangePIN", &RpcService::handleChangePIN},
-        {"keycard.ChangePUK", &RpcService::handleChangePUK},
-        {"keycard.Unblock", &RpcService::handleUnblock},
-        {"keycard.GenerateMnemonic", &RpcService::handleGenerateMnemonic},
-        {"keycard.LoadMnemonic", &RpcService::handleLoadMnemonic},
-        {"keycard.FactoryReset", &RpcService::handleFactoryReset},
-        {"keycard.GetMetadata", &RpcService::handleGetMetadata},
-        {"keycard.StoreMetadata", &RpcService::handleStoreMetadata},
-        {"keycard.ExportLoginKeys", &RpcService::handleExportLoginKeys},
-        {"keycard.ExportRecoverKeys", &RpcService::handleExportRecoverKeys},
-    };
-
     QJsonObject response;
     if (lifeCycleHandlers.contains(method)) {
         response = (this->*lifeCycleHandlers[method])(id, params);
     } else if (compositeHandlers.contains(method)) {
         response = (this->*compositeHandlers[method])(id, params);
-    } else if (singleStepHandlers.contains(method)) {
-        // Enable batch mode BEFORE starting detection so the NFC session stays alive
-        m_commMgr->startBatchOperations();
-        auto batchGuard = [this](void*) { m_commMgr->endBatchOperations(); };
-        std::unique_ptr<void, decltype(batchGuard)> guard(reinterpret_cast<void*>(1), batchGuard);
-
-        response = (this->*singleStepHandlers[method])(id, params);
     } else {
         return toCompactJson(createErrorResponse(id, -32601, QString("Method not found: %1").arg(method)));
     }
@@ -160,58 +136,6 @@ QJsonObject RpcService::createErrorResponse(quint64 id, int code, const QString&
     response["result"] = QJsonValue::Null;
     response["error"] = error;
     return response;
-}
-
-QJsonObject RpcService::statusToJson(const SessionManager::Status& status) {
-    QJsonObject json;
-    json["state"] = status.state;
-
-    // keycardInfo (nullable)
-    if (status.keycardInfo) {
-        QJsonObject info;
-        info["installed"] = status.keycardInfo->installed;
-        info["initialized"] = status.keycardInfo->initialized;
-        info["instanceUID"] = status.keycardInfo->instanceUID;
-        info["version"] = status.keycardInfo->version;
-        info["availableSlots"] = status.keycardInfo->availableSlots;
-        info["keyUID"] = status.keycardInfo->keyUID;
-        json["keycardInfo"] = info;
-    } else {
-        json["keycardInfo"] = QJsonValue::Null;
-    }
-
-    // keycardStatus (nullable)
-    if (status.keycardStatus) {
-        QJsonObject cardStatus;
-        cardStatus["remainingAttemptsPIN"] = status.keycardStatus->remainingAttemptsPIN;
-        cardStatus["remainingAttemptsPUK"] = status.keycardStatus->remainingAttemptsPUK;
-        cardStatus["keyInitialized"] = status.keycardStatus->keyInitialized;
-        cardStatus["path"] = status.keycardStatus->path;
-        json["keycardStatus"] = cardStatus;
-    } else {
-        json["keycardStatus"] = QJsonValue::Null;
-    }
-
-    // metadata (nullable)
-    if (status.metadata) {
-        QJsonObject meta;
-        meta["name"] = status.metadata->name;
-
-        QJsonArray walletsArray;
-        for (const auto& wallet : status.metadata->wallets) {
-            QJsonObject w;
-            w["path"] = wallet.path;
-            w["address"] = wallet.address;
-            w["publicKey"] = wallet.publicKey;
-            walletsArray.append(w);
-        }
-        meta["wallets"] = walletsArray;
-        json["metadata"] = meta;
-    } else {
-        json["metadata"] = QJsonValue::Null;
-    }
-
-    return json;
 }
 
 // ============================================================================
@@ -317,236 +241,10 @@ QJsonObject RpcService::recoverKeysToJson(const SessionManager::RecoverKeys& key
 // RPC Method Handlers
 // ============================================================================
 
-QJsonObject RpcService::handleStart(quint64 id, const QJsonObject& params) {
-    qDebug() << "StatusKeycardQt::RpcService::handleStart() called on RpcService at:" << (void*)this;
-    qDebug() << "StatusKeycardQt::SessionManager at:" << (void*)m_sessionManager.get();
-
-    QString storagePath = params["storageFilePath"].toString();
-    bool logEnabled = params["logEnabled"].toBool(false);
-    QString logFilePath = params["logFilePath"].toString();
-
-    QJsonObject validationError = validateAndConfigureStorage(id, storagePath);
-    if (!validationError.isEmpty()) {
-        return validationError;
-    }
-
-    bool success = m_sessionManager->start(logEnabled, logFilePath);
-    if (!success) {
-        return createErrorResponse(id, -32000, m_sessionManager->lastError());
-    }
-
-    qDebug() << "StatusKeycardQt::RpcService::handleStart() completed. SessionManager started successfully.";
-    qDebug() << "StatusKeycardQt::CommunicationManager at:" << (void*)m_commMgr.get();
-
-    return createSuccessResponse(id, QJsonObject());
-}
-
 QJsonObject RpcService::handleStop(quint64 id, const QJsonObject& params) {
     Q_UNUSED(params);
     m_sessionManager->stop();
     return createSuccessResponse(id, QJsonObject());
-}
-
-QJsonObject RpcService::handleGetStatus(quint64 id, const QJsonObject& params) {
-    Q_UNUSED(params);
-    SessionManager::Status status = m_sessionManager->getStatus();
-    return createSuccessResponse(id, statusToJson(status));
-}
-
-QJsonObject RpcService::handleInitialize(quint64 id, const QJsonObject& params) {
-    QString pin = params["pin"].toString();
-    QString puk = params["puk"].toString();
-    QString pairingPassword = params["pairingPassword"].toString();
-
-    if (pin.length() != PinLength) {
-        return createErrorResponse(id, -32602, "PIN must be " + QString::number(PinLength) + " digits");
-    }
-    if (puk.length() != PukLength) {
-        return createErrorResponse(id, -32602, "PUK must be " + QString::number(PukLength) + " digits");
-    }
-
-    bool success = m_sessionManager->initialize(pin, puk, pairingPassword);
-    if (!success) {
-        return createErrorResponse(id, -32000, m_sessionManager->lastError());
-    }
-
-    return createSuccessResponse(id, QJsonObject());
-}
-
-QJsonObject RpcService::handleAuthorize(quint64 id, const QJsonObject& params) {
-    QString pin = params["pin"].toString();
-
-    if (pin.length() != PinLength) {
-        return createErrorResponse(id, -32602, "PIN must be " + QString::number(PinLength) + " digits");
-    }
-
-    bool authorized = m_sessionManager->authorize(pin);
-
-    QJsonObject result;
-    result["authorized"] = authorized;
-
-    return createSuccessResponse(id, result);
-}
-
-QJsonObject RpcService::handleChangePIN(quint64 id, const QJsonObject& params) {
-    QString newPin = params["newPin"].toString();
-
-    if (newPin.length() != PinLength) {
-        return createErrorResponse(id, -32602, "New PIN must be 6 digits");
-    }
-
-    bool success = m_sessionManager->changePIN(newPin);
-    if (!success) {
-        return createErrorResponse(id, -32000, m_sessionManager->lastError());
-    }
-
-    return createSuccessResponse(id, QJsonObject());
-}
-
-QJsonObject RpcService::handleChangePUK(quint64 id, const QJsonObject& params) {
-    QString newPuk = params["newPuk"].toString();
-
-    if (newPuk.length() != PukLength) {
-        return createErrorResponse(id, -32602, "New PUK must be " + QString::number(PukLength) + " digits");
-    }
-
-    bool success = m_sessionManager->changePUK(newPuk);
-    if (!success) {
-        return createErrorResponse(id, -32000, m_sessionManager->lastError());
-    }
-
-    return createSuccessResponse(id, QJsonObject());
-}
-
-QJsonObject RpcService::handleUnblock(quint64 id, const QJsonObject& params) {
-    QString puk = params["puk"].toString();
-    QString newPin = params["newPin"].toString();
-
-    if (puk.length() != PukLength) {
-        return createErrorResponse(id, -32602, "PUK must be " + QString::number(PukLength) + " digits");
-    }
-    if (newPin.length() != PinLength) {
-        return createErrorResponse(id, -32602, "New PIN must be " + QString::number(PinLength) + " digits");
-    }
-
-    bool success = m_sessionManager->unblockPIN(puk, newPin);
-    if (!success) {
-        return createErrorResponse(id, -32000, m_sessionManager->lastError());
-    }
-
-    return createSuccessResponse(id, QJsonObject());
-}
-
-QJsonObject RpcService::handleGenerateMnemonic(quint64 id, const QJsonObject& params) {
-    int length = params["length"].toInt(12);
-
-    QVector<int> indexes = m_sessionManager->generateMnemonic(length);
-    if (indexes.isEmpty()) {
-        return createErrorResponse(id, -32000, m_sessionManager->lastError());
-    }
-
-    QJsonArray indexesArray;
-    for (int idx : indexes) {
-        indexesArray.append(idx);
-    }
-
-    QJsonObject result;
-    result["indexes"] = indexesArray;
-
-    return createSuccessResponse(id, result);
-}
-
-QJsonObject RpcService::handleLoadMnemonic(quint64 id, const QJsonObject& params) {
-    QString mnemonic = params["mnemonic"].toString();
-    QString passphrase = params["passphrase"].toString();
-
-    if (mnemonic.isEmpty()) {
-        return createErrorResponse(id, -32602, "mnemonic is required");
-    }
-
-    QString keyUID = m_sessionManager->loadMnemonic(mnemonic, passphrase);
-    if (keyUID.isEmpty()) {
-        return createErrorResponse(id, -32000, m_sessionManager->lastError());
-    }
-
-    QJsonObject result;
-    result["keyUID"] = keyUID;
-
-    return createSuccessResponse(id, result);
-}
-
-QJsonObject RpcService::handleFactoryReset(quint64 id, const QJsonObject& params) {
-    Q_UNUSED(params);
-
-    bool success = m_sessionManager->factoryReset();
-    if (!success) {
-        return createErrorResponse(id, -32000, m_sessionManager->lastError());
-    }
-
-    return createSuccessResponse(id, QJsonObject());
-}
-
-QJsonObject RpcService::handleGetMetadata(quint64 id, const QJsonObject& params) {
-    Q_UNUSED(params);
-
-    SessionManager::Metadata metadata = m_sessionManager->getMetadata();
-
-    QJsonObject meta;
-    meta["name"] = metadata.name;
-
-    QJsonArray walletsArray;
-    for (const auto& wallet : metadata.wallets) {
-        QJsonObject w;
-        w["path"] = wallet.path;
-        w["address"] = wallet.address;
-        w["publicKey"] = wallet.publicKey;
-        walletsArray.append(w);
-    }
-    meta["wallets"] = walletsArray;
-
-    QJsonObject result;
-    result["metadata"] = meta;
-
-    return createSuccessResponse(id, result);
-}
-
-QJsonObject RpcService::handleStoreMetadata(quint64 id, const QJsonObject& params) {
-    QString name = params["name"].toString();
-    QJsonArray pathsArray = params["paths"].toArray();
-
-    QStringList paths;
-    for (const QJsonValue& val : pathsArray) {
-        paths.append(val.toString());
-    }
-
-    bool success = m_sessionManager->storeMetadata(name, paths);
-    if (!success) {
-        return createErrorResponse(id, -32000, m_sessionManager->lastError());
-    }
-
-    return createSuccessResponse(id, QJsonObject());
-}
-
-QJsonObject RpcService::handleExportLoginKeys(quint64 id, const QJsonObject& params) {
-    Q_UNUSED(params);
-
-    SessionManager::LoginKeys keys = m_sessionManager->exportLoginKeys();
-    if (!m_sessionManager->lastError().isEmpty()) {
-        return createErrorResponse(id, -32000, m_sessionManager->lastError());
-    }
-
-    return createSuccessResponse(id, loginKeysToJson(keys));
-}
-
-QJsonObject RpcService::handleExportRecoverKeys(quint64 id, const QJsonObject& params) {
-    Q_UNUSED(params);
-
-    SessionManager::RecoverKeys keys = m_sessionManager->exportRecoverKeys();
-    if (!m_sessionManager->lastError().isEmpty()) {
-        return createErrorResponse(id, -32000, m_sessionManager->lastError());
-    }
-
-    return createSuccessResponse(id, recoverKeysToJson(keys));
 }
 
 QJsonObject RpcService::handleCancelCurrentOperation(quint64 id, const QJsonObject& params) {

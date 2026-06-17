@@ -24,13 +24,6 @@ typedef void (*SignalCallback)(const char* signal_json);
 // ============================================================================
 
 /**
- * @brief Initialize the RPC service
- * @return JSON response with error field (must be freed with Free())
- * Response format: {"error":""} on success, {"error":"message"} on failure
- */
-char* KeycardInitializeRPC(void);
-
-/**
  * @brief Call an RPC method (compatibility wrapper - uses global context)
  * @param payload_json JSON-RPC request string
  * @return JSON-RPC response string (must be freed with Free())
@@ -48,69 +41,6 @@ void KeycardSetSignalEventCallback(SignalCallback callback);
  * @param param Pointer to memory to free
  */
 void Free(void* param);
-
-/**
- * @brief Reset API state (compatibility wrapper - uses global context)
- */
-void ResetAPI(void);
-
-// ============================================================================
-// Context-Based API (For testing and advanced usage)
-// ============================================================================
-
-/**
- * @brief Create a new keycard context (for multi-context scenarios)
- * @return StatusKeycardContext handle or NULL on failure
- */
-StatusKeycardContext KeycardCreateContext(void);
-
-/**
- * @brief Call an RPC method with specific context
- * @param ctx Context handle
- * @param payload_json JSON-RPC request string
- * @return JSON-RPC response string (must be freed with Free())
- */
-char* KeycardCallRPCWithContext(StatusKeycardContext ctx, const char* payload_json);
-
-/**
- * @brief Set signal event callback for specific context
- * @param ctx Context handle
- * @param callback Function pointer to receive signal events
- */
-void KeycardSetSignalEventCallbackWithContext(StatusKeycardContext ctx, SignalCallback callback);
-
-/**
- * @brief Reset API state for specific context
- * @param ctx Context handle
- */
-void ResetAPIWithContext(StatusKeycardContext ctx);
-
-/**
- * @brief Destroy a keycard context and free resources
- * @param ctx Context handle
- */
-void KeycardDestroyContext(StatusKeycardContext ctx);
-
-// ============================================================================
-// Flow API (Deprecated, for compatibility) - Uses global context
-// ============================================================================
-
-char* KeycardInitFlow(const char* storageDir);
-char* KeycardStartFlow(int flowType, const char* jsonParams);
-char* KeycardResumeFlow(const char* jsonParams);
-char* KeycardCancelFlow(void);
-
-// ============================================================================
-// Mocked Functions (For testing) - Uses global context
-// ============================================================================
-
-char* MockedLibRegisterKeycard(int cardIndex, int readerState, 
-                                int keycardState, const char* mockedKeycard, 
-                                const char* mockedKeycardHelper);
-char* MockedLibReaderPluggedIn(void);
-char* MockedLibReaderUnplugged(void);
-char* MockedLibKeycardInserted(int cardIndex);
-char* MockedLibKeycardRemoved(void);
 
 // ============================================================================
 // Android JNI Support (not part of original API)

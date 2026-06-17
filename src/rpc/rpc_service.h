@@ -62,11 +62,6 @@ private:
     QJsonObject createErrorResponse(quint64 id, int code, const QString& message);
 
     /**
-     * @brief Convert SessionManager::Status to JSON
-     */
-    QJsonObject statusToJson(const SessionManager::Status& status);
-
-    /**
      * @brief Validate infrastructure and configure pairing storage
      * @return empty QJsonObject on success, or error response on failure
      */
@@ -82,21 +77,7 @@ private:
     QJsonObject recoverKeysToJson(const SessionManager::RecoverKeys& keys);
 
     // RPC method handlers
-    QJsonObject handleStart(quint64 id, const QJsonObject& params);
     QJsonObject handleStop(quint64 id, const QJsonObject& params);
-    QJsonObject handleGetStatus(quint64 id, const QJsonObject& params);
-    QJsonObject handleInitialize(quint64 id, const QJsonObject& params);
-    QJsonObject handleAuthorize(quint64 id, const QJsonObject& params);
-    QJsonObject handleChangePIN(quint64 id, const QJsonObject& params);
-    QJsonObject handleChangePUK(quint64 id, const QJsonObject& params);
-    QJsonObject handleUnblock(quint64 id, const QJsonObject& params);
-    QJsonObject handleGenerateMnemonic(quint64 id, const QJsonObject& params);
-    QJsonObject handleLoadMnemonic(quint64 id, const QJsonObject& params);
-    QJsonObject handleFactoryReset(quint64 id, const QJsonObject& params);
-    QJsonObject handleGetMetadata(quint64 id, const QJsonObject& params);
-    QJsonObject handleStoreMetadata(quint64 id, const QJsonObject& params);
-    QJsonObject handleExportLoginKeys(quint64 id, const QJsonObject& params);
-    QJsonObject handleExportRecoverKeys(quint64 id, const QJsonObject& params);
     QJsonObject handleCancelCurrentOperation(quint64 id, const QJsonObject& params);
     QJsonObject handleLogin(quint64 id, const QJsonObject& params);
     QJsonObject handleRecover(quint64 id, const QJsonObject& params);
