@@ -83,8 +83,14 @@ public:
         QString xpub;       // Base58Check-encoded BIP32 extended public key
     };
     ExtendedPublicKey exportExtendedPublicKey(const QString& path);
-    ExtendedPublicKey exportExtendedPublicKey(const QString& keyUid, const QString& pin, const QString& path,
-        const QString& storageFilePath, bool logEnabled = false, const QString& logFilePath = QString());
+
+    struct ExportExtendedPublicKeyResult {
+        ExtendedPublicKey extendedPublicKey;
+        QString masterKeyAddress;  // Empty if exportMasterAddress was false
+    };
+    ExportExtendedPublicKeyResult exportExtendedPublicKey(const QString& keyUid, const QString& pin, const QString& path,
+        bool exportMasterAddress, const QString& storageFilePath, bool logEnabled = false,
+        const QString& logFilePath = QString());
 
     struct LoginKeys {
         KeyPair whisperPrivateKey;
