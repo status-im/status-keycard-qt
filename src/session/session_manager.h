@@ -57,7 +57,6 @@ public:
     bool unblockPIN(const QString& puk, const QString& newPIN);
 
     // Key operations
-    QVector<int> generateMnemonic(int length);
     QString loadMnemonic(const QString& mnemonic, const QString& passphrase);
     bool factoryReset();
 

@@ -36,40 +36,6 @@ add_keycard_test(test_rpc_service mocks/mock_communication_manager.cpp)
 add_keycard_test(test_session_manager mocks/mock_communication_manager.cpp)
 add_keycard_test(test_signal_manager)
 
-# Flow API tests (pure logic - NO hardware, runs instantly)
-add_keycard_test(test_flow_logic_only)
-
-# Flow API tests (mock APDU responses)
-add_keycard_test(test_flow_with_mock_backend mocks/mock_keycard_backend.cpp)
-
-# Flow signal routing test (proves signals reach SignalManager)
-add_keycard_test(test_flow_signal_routing mocks/mock_communication_manager.cpp)
-
-# Flow API tests (require hardware - disabled by default)
-# State machine test is pure logic - NO hardware needed, always enabled!
-add_keycard_test(test_flow_state_machine)
-
-# SignFlow TLV parsing and ECDSA recovery tests (pure logic - NO hardware)
-add_executable(test_sign_flow_tlv_parsing test_sign_flow_tlv_parsing.cpp)
-target_link_libraries(test_sign_flow_tlv_parsing
-    PRIVATE
-        status-keycard-qt
-        Qt6::Test
-        Qt6::Core
-        Qt6::Concurrent
-        OpenSSL::Crypto  # Required for ECDSA operations
-)
-target_include_directories(test_sign_flow_tlv_parsing
-    PRIVATE
-        ${CMAKE_CURRENT_SOURCE_DIR}/../src
-        ${CMAKE_CURRENT_SOURCE_DIR}
-        ${KEYCARD_QT_DIR}/include
-)
-add_test(NAME test_sign_flow_tlv_parsing COMMAND test_sign_flow_tlv_parsing)
-
-# Flow signals constants test (pure logic - NO hardware needed)
-add_keycard_test(test_flow_signals)
-
 # Coverage target (optional, requires gcov/lcov)
 if(CMAKE_BUILD_TYPE MATCHES "Debug")
     option(ENABLE_COVERAGE "Enable code coverage" OFF)

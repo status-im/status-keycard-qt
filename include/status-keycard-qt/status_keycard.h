@@ -92,27 +92,6 @@ void ResetAPIWithContext(StatusKeycardContext ctx);
 void KeycardDestroyContext(StatusKeycardContext ctx);
 
 // ============================================================================
-// Flow API (Deprecated, for compatibility) - Uses global context
-// ============================================================================
-
-char* KeycardInitFlow(const char* storageDir);
-char* KeycardStartFlow(int flowType, const char* jsonParams);
-char* KeycardResumeFlow(const char* jsonParams);
-char* KeycardCancelFlow(void);
-
-// ============================================================================
-// Mocked Functions (For testing) - Uses global context
-// ============================================================================
-
-char* MockedLibRegisterKeycard(int cardIndex, int readerState, 
-                                int keycardState, const char* mockedKeycard, 
-                                const char* mockedKeycardHelper);
-char* MockedLibReaderPluggedIn(void);
-char* MockedLibReaderUnplugged(void);
-char* MockedLibKeycardInserted(int cardIndex);
-char* MockedLibKeycardRemoved(void);
-
-// ============================================================================
 // Android JNI Support (not part of original API)
 // ============================================================================
 
