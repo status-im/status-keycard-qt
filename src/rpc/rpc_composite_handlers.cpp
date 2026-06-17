@@ -146,6 +146,7 @@ QJsonObject RpcService::handleExportExtendedPublicKey(quint64 id, const QJsonObj
     QString keyUid = params["keyUid"].toString();
     QString pin = params["pin"].toString();
     QString path = params["path"].toString();
+    bool exportMasterAddress = params["exportMasterAddr"].toBool(false);
     bool logEnabled = params["logEnabled"].toBool(false);
     QString logFilePath = params["logFilePath"].toString();
     if (storagePath.isEmpty()) {
@@ -170,19 +171,27 @@ QJsonObject RpcService::handleExportExtendedPublicKey(quint64 id, const QJsonObj
         return validationError;
     }
 
-    SessionManager::ExtendedPublicKey key = m_sessionManager->exportExtendedPublicKey(keyUidWithout0x, pin, path, storagePath, logEnabled, logFilePath);
+    SessionManager::ExportExtendedPublicKeyResult result = m_sessionManager->exportExtendedPublicKey(keyUidWithout0x,
+        pin, path, exportMasterAddress, storagePath, logEnabled, logFilePath);
     SignalManager::instance()->emitStatusChanged(m_sessionManager->getStatus());
     if (!m_sessionManager->lastError().isEmpty()) {
         return createErrorResponse(id, -32000, m_sessionManager->lastError());
     }
 
+    const SessionManager::ExtendedPublicKey& key = result.extendedPublicKey;
     QJsonObject keyObj;
     keyObj["address"] = ensure0xPrefix(key.address);
     keyObj["publicKey"] = ensure0xPrefix(key.publicKey);
     keyObj["chainCode"] = ensure0xPrefix(key.chainCode);
     keyObj["xpub"] = key.xpub;
 
-    return createSuccessResponse(id, keyObj);
+    QJsonObject response;
+    response["extendedPublicKey"] = keyObj;
+    if (!result.masterKeyAddress.isEmpty()) {
+        response["masterKeyAddress"] = ensure0xPrefix(result.masterKeyAddress);
+    }
+
+    return createSuccessResponse(id, response);
 }
 
 // exports private key only if the derivation path is under `m/43'/60'/1581'/0'/` tree

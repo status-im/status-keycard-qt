@@ -1,5 +1,6 @@
 #include "session_manager.h"
 #include "../utils/common.h"
+#include "../utils/constants.h"
 #include "../utils/crypto_utils.h"
 #include "../utils/signature_utils.h"
 #include <keycard-qt/i_communication_manager.h>
@@ -285,8 +286,9 @@ SessionManager::RecoverKeys SessionManager::load(const QString& pin, const QStri
     return initializeAndLoad(pin, puk, pairingPassword, mnemonic, metadataName, metadataPaths, cardContainsKeyOnly);
 }
 
-SessionManager::ExtendedPublicKey SessionManager::exportExtendedPublicKey(const QString& keyUid, const QString& pin,
-    const QString& path, const QString& storageFilePath, bool logEnabled, const QString& logFilePath)
+SessionManager::ExportExtendedPublicKeyResult SessionManager::exportExtendedPublicKey(const QString& keyUid, const QString& pin,
+    const QString& path, bool exportMasterAddress, const QString& storageFilePath, bool logEnabled,
+    const QString& logFilePath)
 {
     Q_UNUSED(storageFilePath);
     qDebug() << "StatusKeycardQt::SessionManager::exportExtendedPublicKey() path:" << path;
@@ -299,7 +301,7 @@ SessionManager::ExtendedPublicKey SessionManager::exportExtendedPublicKey(const 
     }
 
     if (!ensureKeycardCommunication()) {
-        return ExtendedPublicKey();
+        return ExportExtendedPublicKeyResult();
     }
 
     m_commMgr->startBatchOperations();
@@ -308,7 +310,7 @@ SessionManager::ExtendedPublicKey SessionManager::exportExtendedPublicKey(const 
 
     if (!start(logEnabled, logFilePath)) {
         setError(QString("Failed to start: %1").arg(m_lastError));
-        return ExtendedPublicKey();
+        return ExportExtendedPublicKeyResult();
     }
 
     bool cancelled = false;
@@ -323,31 +325,46 @@ SessionManager::ExtendedPublicKey SessionManager::exportExtendedPublicKey(const 
 
     if (cancelled) {
         setError("exportExtendedPublicKey cancelled");
-        return ExtendedPublicKey();
+        return ExportExtendedPublicKeyResult();
     }
 
     if (m_state != SessionState::Ready) {
         setError(QString("Card not ready (state: %1)").arg(currentStateString()));
-        return ExtendedPublicKey();
+        return ExportExtendedPublicKeyResult();
     }
 
     auto status = getStatus();
     if (!status.keycardInfo) {
         setError("Keycard info not found");
-        return ExtendedPublicKey();
+        return ExportExtendedPublicKeyResult();
     }
 
     if (!validateCompositeKeyUid(keyUid, status.keycardInfo)) {
-        return ExtendedPublicKey();
+        return ExportExtendedPublicKeyResult();
     }
 
     QMutexLocker locker(&m_operationMutex);
 
     if (!authorize(pin)) {
-        return ExtendedPublicKey();
+        return ExportExtendedPublicKeyResult();
     }
 
-    return exportExtendedPublicKey(path);
+    ExportExtendedPublicKeyResult result;
+    result.extendedPublicKey = exportExtendedPublicKey(path);
+    if (!m_lastError.isEmpty()) {
+        return ExportExtendedPublicKeyResult();
+    }
+
+    if (exportMasterAddress) {
+        // Reuse the single-path export to resolve the master key (m) address (rootWalletMasterKey)
+        ExtendedPublicKey masterKey = exportExtendedPublicKey(PathMaster);
+        if (!m_lastError.isEmpty()) {
+            return ExportExtendedPublicKeyResult();
+        }
+        result.masterKeyAddress = masterKey.address;
+    }
+
+    return result;
 }
 
 SessionManager::ExportPublicKeyResult SessionManager::exportPublicKey(const QString& keyUid, const QString& pin,
