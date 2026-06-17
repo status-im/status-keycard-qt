@@ -18,10 +18,9 @@ This library provides a **simple C API** for keycard operations, designed to int
                │
 ┌──────────────▼───────────────────────────┐
 │  status-keycard-qt (C API)               │
-│  • keycard_start()                       │
-│  • keycard_authorize()                   │
-│  • keycard_change_pin()                  │
-│  • ... 15 functions                      │
+│  • KeycardCallRPC(jsonRpcRequest)        │
+│  • KeycardSetSignalEventCallback(cb)     │
+│  • Free()                                │
 └──────────────┬───────────────────────────┘
                │
 ┌──────────────▼───────────────────────────┐
@@ -42,54 +41,79 @@ This library provides a **simple C API** for keycard operations, designed to int
 
 ## Features
 
-- **Direct C API** - Simple function calls, no JSON
+- **JSON-RPC C API** - A single `KeycardCallRPC` entry point driven by JSON-RPC requests
+- **Composite operations** - High-level methods (Login, Recover, Sign, ...) that drive the full card flow
 - **Session Management** - Auto-detection, state machine, persistent pairing
 - **Signal System** - Real-time status-changed notifications
 - **Cross-platform** - Linux, macOS, Windows, Android, iOS
-- **Thread-safe** - Safe for concurrent access
-- **Drop-in replacement** - Compatible with nim-keycard-go
+- **Drop-in replacement** - Compatible with status-keycard-go's C ABI
 
 ## API
+
+The library exposes a small C ABI. All keycard operations go through a single
+JSON-RPC entry point (`KeycardCallRPC`); results and asynchronous status updates
+are returned as JSON strings. Every `char*` returned by the library must be
+released with `Free()`.
 
 ### Core Functions
 
 ```c
-// Session management
-KeycardResult* keycard_initialize(void);
-KeycardResult* keycard_start(const char* storage_path, bool log_enabled, const char* log_path);
-KeycardResult* keycard_stop(void);
-KeycardResult* keycard_get_status(void);
+// Execute a JSON-RPC request (see "RPC Methods" below). Returns a JSON-RPC response.
+// The RPC service / process-global context is created lazily on first use.
+char* KeycardCallRPC(const char* payload_json);
 
-// Card operations
-KeycardResult* keycard_initialize_card(const char* pin, const char* puk, const char* pairing_password);
-KeycardResult* keycard_authorize(const char* pin);
-KeycardResult* keycard_change_pin(const char* new_pin);
-KeycardResult* keycard_change_puk(const char* new_puk);
-KeycardResult* keycard_unblock_pin(const char* puk, const char* new_pin);
+// Register a callback that receives asynchronous signal events as JSON.
+void KeycardSetSignalEventCallback(SignalCallback callback);
 
-// Key operations
-KeycardResult* keycard_generate_mnemonic(int length);
-KeycardResult* keycard_load_mnemonic(const char* mnemonic, const char* passphrase);
-KeycardResult* keycard_export_login_keys(void);
-KeycardResult* keycard_export_recover_keys(void);
-
-// Metadata
-KeycardResult* keycard_get_metadata(void);
-KeycardResult* keycard_store_metadata(const char* name, const char** paths, int paths_count);
-
-// Utilities
-KeycardResult* keycard_factory_reset(void);
-void keycard_free_result(KeycardResult* result);
+// Free any char* returned by the library.
+void Free(void* param);
 ```
+
+> The library requires a running Qt event loop: a `QCoreApplication` (or
+> `QGuiApplication`) must exist on the main thread. Blocking operation methods
+> should be called from a worker thread so the event loop keeps processing card
+> detection (see [examples](examples/)).
+
+### RPC Methods
+
+Requests use standard JSON-RPC 2.0:
+
+```json
+{"jsonrpc":"2.0","method":"keycard.Login","params":{ ... },"id":"1"}
+```
+
+| Method | Purpose | Key params |
+|--------|---------|------------|
+| `keycard.Login` | Authorize and export login keys | `storageFilePath`, `keyUid`, `pin`, `xPubPath`, `extendedResponse` |
+| `keycard.Recover` | Initialize/recover a card from a mnemonic | `storageFilePath`, `pin`, `puk`, `pairingPassword`, `mnemonic`, `keycardUid`, `metadataName`, `metadataPaths` |
+| `keycard.Load` | Load a mnemonic onto a PIN-only card | `storageFilePath`, `pin`, `puk`, `pairingPassword`, `mnemonic`, `metadataName`, `metadataPaths` |
+| `keycard.ExportPublicKey` | Export public key(s) for path(s) | `storageFilePath`, `keyUid`, `pin`, `paths`/`path`, `exportPrivate`, `exportMasterAddress` |
+| `keycard.ExportExtendedPublicKey` | Export an extended public key | `storageFilePath`, `keyUid`, `pin`, `path`, `exportMasterAddr` |
+| `keycard.Sign` | Sign a transaction hash | `storageFilePath`, `keyUid`, `pin`, `txHash`, `path` |
+| `keycard.ChangeKeycardPIN` | Change the PIN | `storageFilePath`, `keyUid`, `pin`, `newPin`, `keycardUid` |
+| `keycard.ChangeKeycardPUK` | Change the PUK | `storageFilePath`, `keyUid`, `pin`, `newPuk`, `keycardUid` |
+| `keycard.UnblockUsingPUK` | Unblock the PIN using the PUK | `storageFilePath`, `keyUid`, `puk`, `newPin`, `keycardUid` |
+| `keycard.GetKeycardMetadata` | Read card metadata (resolves wallets when `pin` is given) | `storageFilePath`, `pin` (optional) |
+| `keycard.StoreKeycardMetadata` | Store card metadata | `storageFilePath`, `pin`, `name`, `paths` |
+| `keycard.FactoryResetKeycard` | Factory reset a card | `storageFilePath`, `keycardUid` |
+| `keycard.Stop` | Stop the session | – |
+| `keycard.CancelCurrentOperation` | Cancel the in-flight operation | – |
+
+All operation methods accept optional `logEnabled` / `logFilePath` params and
+implicitly start card detection — they **block until a card is ready** (or the
+operation is cancelled via `keycard.CancelCurrentOperation`).
 
 ### Result Structure
 
-```c
-typedef struct {
-    bool success;       // Operation succeeded
-    char* error;        // Error message (NULL if success)
-    char* data;         // JSON data for complex results
-} KeycardResult;
+Responses are JSON-RPC 2.0 objects (`result` and `error` are always both
+present; exactly one is non-null):
+
+```json
+// success
+{"jsonrpc":"2.0","id":"1","result":{ ... },"error":null}
+
+// error
+{"jsonrpc":"2.0","id":"1","result":null,"error":{"code":-32601,"message":"Method not found: ..."}}
 ```
 
 ### Signal Callback
@@ -135,104 +159,75 @@ make
 - OpenSSL 3.x
 - keycard-qt (built)
 - CMake 3.16+
-- C++17 compiler
+- C++20 compiler
 
 ## Usage Example
 
-### C API
+See [`examples/simple_usage.cpp`](examples/simple_usage.cpp) for a complete,
+runnable program and [`examples/test_hardware.cpp`](examples/test_hardware.cpp)
+for a hardware test harness.
 
-```c
+### C/C++ API
+
+```cpp
 #include <status-keycard-qt/status_keycard.h>
-#include <stdio.h>
+#include <QCoreApplication>
+#include <thread>
+#include <cstdio>
 
-void on_signal(const char* signal) {
-    printf("Signal: %s\n", signal);
+void on_signal(const char* signal_json) {
+    printf("Signal: %s\n", signal_json);
 }
 
-int main() {
-    KeycardResult* result;
-    
-    // Initialize
-    result = keycard_initialize();
-    if (!result->success) {
-        printf("Init failed: %s\n", result->error);
-        return 1;
-    }
-    keycard_free_result(result);
-    
-    // Set callback
-    keycard_set_signal_callback(on_signal);
-    
-    // Start service
-    result = keycard_start("./pairings.json", false, NULL);
-    if (!result->success) {
-        printf("Start failed: %s\n", result->error);
-        return 1;
-    }
-    keycard_free_result(result);
-    
-    // Wait for card detection (via signals)...
-    
-    // Authorize
-    result = keycard_authorize("123456");
-    if (result->success) {
-        printf("Authorized!\n");
-    } else {
-        printf("Auth failed: %s\n", result->error);
-    }
-    keycard_free_result(result);
-    
-    // Cleanup
-    keycard_stop();
-    keycard_reset();
-    
-    return 0;
+int main(int argc, char* argv[]) {
+    QCoreApplication app(argc, argv);  // required: the library needs a Qt event loop
+
+    // The RPC service / global context is created lazily on first use.
+    KeycardSetSignalEventCallback(on_signal);
+
+    // Blocking operations wait for a card, so run them off the main thread
+    // while the Qt event loop keeps processing card detection.
+    std::thread worker([&app]() {
+        const char* request =
+            R"({"jsonrpc":"2.0","method":"keycard.GetKeycardMetadata",)"
+            R"("params":{"storageFilePath":"./pairings.json"},"id":"1"})";
+        char* response = KeycardCallRPC(request);
+        printf("Response: %s\n", response);
+        Free(response);
+
+        QMetaObject::invokeMethod(&app, &QCoreApplication::quit);
+    });
+
+    int rc = app.exec();
+    worker.join();
+    return rc;
 }
 ```
 
 ### Nim Bindings
 
 ```nim
-# keycard_go/impl.nim
-type KeycardResult* = object
-  success*: bool
-  error*: cstring
-  data*: cstring
+# impl.nim
+proc keycardCallRPC(payload: cstring): cstring {.importc: "KeycardCallRPC".}
+proc free(p: pointer) {.importc: "Free".}
 
-proc keycard_initialize*(): ptr KeycardResult {.importc.}
-proc keycard_start*(storage_path: cstring, log_enabled: bool, log_path: cstring): ptr KeycardResult {.importc.}
-proc keycard_authorize*(pin: cstring): ptr KeycardResult {.importc.}
-proc keycard_free_result*(result: ptr KeycardResult) {.importc.}
-
-type KeycardSignalCallback* = proc(signal: cstring): void {.cdecl.}
-proc keycard_set_signal_callback*(callback: KeycardSignalCallback) {.importc.}
+type SignalCallback* = proc(signal: cstring) {.cdecl.}
+proc keycardSetSignalEventCallback(cb: SignalCallback) {.importc: "KeycardSetSignalEventCallback".}
 ```
 
 ```nim
-# keycard_go.nim
-import keycard_go/impl
+import json
 
-proc keycardInitialize*(): string =
-  let res = keycard_initialize()
-  defer: keycard_free_result(res)
-  if not res.success:
-    return $res.error
-  return "ok"
-
-proc keycardStart*(storagePath: string, logEnabled: bool = false): string =
-  let res = keycard_start(storagePath.cstring, logEnabled, nil)
-  defer: keycard_free_result(res)
-  if not res.success:
-    return $res.error
-  return "ok"
-
-proc keycardAuthorize*(pin: string): tuple[ok: bool, authorized: bool] =
-  let res = keycard_authorize(pin.cstring)
-  defer: keycard_free_result(res)
-  if not res.success:
-    return (false, false)
-  # Parse res.data JSON to get authorized field
-  return (true, true)  # simplified
+proc callRPC*(methodName: string, params: JsonNode = newJObject()): JsonNode =
+  let request = $(%*{
+    "jsonrpc": "2.0",
+    "method": "keycard." & methodName,
+    "params": params,
+    "id": "1",
+  })
+  let raw = keycardCallRPC(request.cstring)
+  defer: free(raw)
+  result = ($raw).parseJson
 ```
 
 ## Related Projects
