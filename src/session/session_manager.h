@@ -97,10 +97,6 @@ public:
         KeyPair encryptionPrivateKey;
         ExtendedPublicKey extendedPublicKey; // populated only when xPubPath provided to composite login()
     };
-    LoginKeys exportLoginKeys(bool isMainCommand = true);
-    LoginKeys login(const QString& keyUid, const QString& pin,
-                    const QString& xPubPath = QString(),
-                    bool logEnabled = false, const QString& logFilePath = QString());
 
     struct RecoverKeys {
         LoginKeys loginKeys;
@@ -109,6 +105,15 @@ public:
         KeyPair walletKey;
         KeyPair masterKey;
     };
+
+    LoginKeys exportLoginKeys(bool isMainCommand = true);
+    // Composite login. Returns the full RecoverKeys set when extendedResponse is true; otherwise
+    // only `loginKeys` is populated (the extra keys are left default).
+    RecoverKeys login(const QString& keyUid, const QString& pin,
+                    const QString& xPubPath = QString(),
+                    bool logEnabled = false, const QString& logFilePath = QString(),
+                    bool extendedResponse = false);
+
     RecoverKeys exportRecoverKeys(bool isMainCommand = true);
     RecoverKeys recover(const QString& pin, const QString& puk, const QString& pairingPassword, const QString& mnemonic,
                         const QString& metadataName = QString(), const QStringList& metadataPaths = QStringList(),

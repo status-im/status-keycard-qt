@@ -15,6 +15,7 @@ QJsonObject RpcService::handleLogin(quint64 id, const QJsonObject& params) {
     QString xPubPath = params["xPubPath"].toString();
     bool logEnabled = params["logEnabled"].toBool(false);
     QString logFilePath = params["logFilePath"].toString();
+    bool extendedResponse = params["extendedResponse"].toBool(false);
     if (storagePath.isEmpty()) {
         return createErrorResponse(id, -32602, "Missing required parameter: storageFilePath");
     }
@@ -33,13 +34,14 @@ QJsonObject RpcService::handleLogin(quint64 id, const QJsonObject& params) {
         return validationError;
     }
 
-    SessionManager::LoginKeys keys = m_sessionManager->login(keyUidWithout0x, pin, xPubPath, logEnabled, logFilePath);
+    SessionManager::RecoverKeys keys = m_sessionManager->login(keyUidWithout0x, pin, xPubPath, logEnabled, logFilePath, extendedResponse);
     SignalManager::instance()->emitStatusChanged(m_sessionManager->getStatus());
     if (!m_sessionManager->lastError().isEmpty()) {
         return createErrorResponse(id, -32000, m_sessionManager->lastError());
     }
 
-    return createSuccessResponse(id, loginKeysToJson(keys));
+    return createSuccessResponse(id,
+        extendedResponse ? recoverKeysToJson(keys) : loginKeysToJson(keys.loginKeys));
 }
 
 QJsonObject RpcService::handleRecover(quint64 id, const QJsonObject& params) {
