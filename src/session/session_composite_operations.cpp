@@ -44,8 +44,8 @@ bool SessionManager::validateCompositeKeycardUid(const QString& keycardUid, cons
     return true;
 }
 
-SessionManager::LoginKeys SessionManager::login(const QString& keyUid, const QString& pin,
-    const QString& xPubPath, bool logEnabled, const QString& logFilePath)
+SessionManager::RecoverKeys SessionManager::login(const QString& keyUid, const QString& pin,
+    const QString& xPubPath, bool logEnabled, const QString& logFilePath, bool extendedResponse)
 {
     qDebug() << "StatusKeycardQt::SessionManager::login() xPubPath:" << xPubPath;
 
@@ -59,7 +59,7 @@ SessionManager::LoginKeys SessionManager::login(const QString& keyUid, const QSt
     }
 
     if (!ensureKeycardCommunication()) {
-        return LoginKeys();
+        return RecoverKeys();
     }
 
     // Enable batch mode BEFORE starting detection so the NFC session stays alive
@@ -70,7 +70,7 @@ SessionManager::LoginKeys SessionManager::login(const QString& keyUid, const QSt
     // Step 1: Start card detection
     if (!start(logEnabled, logFilePath)) {
         setError(QString("Failed to start: %1").arg(m_lastError));
-        return LoginKeys();
+        return RecoverKeys();
     }
 
     // Step 2: Wait for card to be ready (event-driven, no polling)
@@ -86,35 +86,40 @@ SessionManager::LoginKeys SessionManager::login(const QString& keyUid, const QSt
 
     if (cancelled) {
         setError("Login cancelled");
-        return LoginKeys();
+        return RecoverKeys();
     }
 
     if (m_state != SessionState::Ready) {
         setError(QString("Card not ready (state: %1)").arg(currentStateString()));
-        return LoginKeys();
+        return RecoverKeys();
     }
 
     auto status = getStatus();
     if (!status.keycardInfo) {
         setError("Keycard info not found");
-        return LoginKeys();
+        return RecoverKeys();
     }
 
     if (!validateCompositeKeyUid(keyUid, status.keycardInfo)) {
-        return LoginKeys();
+        return RecoverKeys();
     }
 
     // Step 3: Authorize with PIN (batch is already active)
     QMutexLocker locker(&m_operationMutex);
 
     if (!authorize(pin)) {
-        return LoginKeys();
+        return RecoverKeys();
     }
 
-    // Step 4: Export login keys (not main command — batch is already open)
-    LoginKeys keys = exportLoginKeys(false);
+    // Step 4: Export keys (not main command — batch is already open).
+    RecoverKeys keys;
+    if (extendedResponse) {
+        keys = exportRecoverKeys(false);
+    } else {
+        keys.loginKeys = exportLoginKeys(false);
+    }
     if (!m_lastError.isEmpty()) {
-        return LoginKeys();
+        return RecoverKeys();
     }
 
     // Step 5: Optionally derive an extended public key at xPubPath while we're still
@@ -122,9 +127,9 @@ SessionManager::LoginKeys SessionManager::login(const QString& keyUid, const QSt
     if (!xPubPath.isEmpty()) {
         ExtendedPublicKey epk = exportExtendedPublicKey(xPubPath);
         if (!m_lastError.isEmpty()) {
-            return LoginKeys();
+            return RecoverKeys();
         }
-        keys.extendedPublicKey = epk;
+        keys.loginKeys.extendedPublicKey = epk;
     }
 
     return keys;

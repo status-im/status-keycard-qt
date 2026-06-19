@@ -297,6 +297,16 @@ QJsonObject RpcService::recoverKeysToJson(const SessionManager::RecoverKeys& key
     keysObj["walletKey"] = keyPairToJson(keys.walletKey);
     keysObj["masterKey"] = keyPairToJson(keys.masterKey);
 
+    // Present only when an extended public key was derived (xPubPath provided to login()).
+    if (!keys.loginKeys.extendedPublicKey.xpub.isEmpty()) {
+        QJsonObject epk;
+        epk["address"] = ensure0xPrefix(keys.loginKeys.extendedPublicKey.address);
+        epk["publicKey"] = ensure0xPrefix(keys.loginKeys.extendedPublicKey.publicKey);
+        epk["chainCode"] = ensure0xPrefix(keys.loginKeys.extendedPublicKey.chainCode);
+        epk["xpub"] = keys.loginKeys.extendedPublicKey.xpub;
+        keysObj["extendedPublicKey"] = epk;
+    }
+
     QJsonObject result;
     result["keys"] = keysObj;
 
