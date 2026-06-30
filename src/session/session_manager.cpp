@@ -7,6 +7,7 @@
 #include <keycard-qt/tlv_utils.h>
 #include <keycard-qt/metadata_utils.h>
 #include <keycard-qt/i_communication_manager.h>
+#include <keycard-qt/backends/keycard_channel_backend.h>
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QJsonArray>
@@ -126,10 +127,25 @@ bool SessionManager::start(bool logEnabled, const QString& logFilePath)
         return false;
     }
 
-    // Only set WaitingForCard if a reader-availability signal hasn't already
-    // moved us to a more specific state (e.g. WaitingForReader).
+    // Determine the initial reader presence SYNCHRONOUSLY from the backend, instead of relying only on
+    // the readerAvailabilityChanged signal. With AutoConnection that signal can be delivered queued
+    // (cross-thread) and lose the race against this default, intermittently leaving the flow on
+    // WaitingForCard ("tap card") when no reader is actually present.
     if (m_state == SessionState::UnknownReaderState) {
+#if !defined(Q_OS_ANDROID) && !defined(Q_OS_IOS)
+        bool readerAvailable = true;
+        if (auto cmdSet = m_commMgr->commandSet()) {
+            if (auto ch = cmdSet->channel()) {
+                if (auto* backend = ch->backend()) {
+                    readerAvailable =
+                        backend->channelState() != Keycard::ChannelOperationalState::NotAvailable;
+                }
+            }
+        }
+        setState(readerAvailable ? SessionState::WaitingForCard : SessionState::WaitingForReader);
+#else
         setState(SessionState::WaitingForCard);
+#endif
     }
 
     qDebug() << "StatusKeycardQt::SessionManager: Started successfully, monitoring for cards";
