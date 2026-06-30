@@ -11,6 +11,7 @@ set(CMAKE_AUTOUIC ON)
 # Options - Save user preferences before adding keycard-qt
 option(BUILD_TESTING "Build unit tests" ON)
 option(BUILD_EXAMPLES "Build example applications" OFF)
+option(USE_SIMULATED_KEYCARD "Build with the simulated keycard backend for tests" OFF)
 set(STATUS_KEYCARD_BUILD_TESTING ${BUILD_TESTING})  # Save status-keycard-qt test preference
 set(STATUS_KEYCARD_BUILD_EXAMPLES ${BUILD_EXAMPLES})  # Save status-keycard-qt examples preference
 set(STATUS_KEYCARD_BUILD_SHARED_LIBS ${BUILD_SHARED_LIBS})  # Save status-keycard-qt library type preference
@@ -98,8 +99,24 @@ set(SOURCES
     src/rpc/rpc_composite_handlers.cpp
 )
 
+if(USE_SIMULATED_KEYCARD)
+    list(APPEND SOURCES src/session/simulated_channel_backend.cpp)
+endif()
+
 # Create library (shared or static based on BUILD_SHARED_LIBS)
 add_library(status-keycard-qt ${SOURCES})
+
+if(USE_SIMULATED_KEYCARD)
+    message(STATUS "status-keycard-qt: USE_SIMULATED_KEYCARD enabled (simulated keycard backend)")
+    target_compile_definitions(status-keycard-qt PUBLIC USE_SIMULATED_KEYCARD)
+    # simulated_channel_backend.cpp talks to the jcardsim server over a TCP socket.
+    # On Windows the socket API (WSAStartup/socket/connect/getaddrinfo/...) lives in
+    # ws2_32; without it the DLL link fails with unresolved externals. No-op elsewhere
+    # (POSIX sockets are in libc).
+    if(WIN32)
+        target_link_libraries(status-keycard-qt PRIVATE ws2_32)
+    endif()
+endif()
 
 target_include_directories(status-keycard-qt
     PUBLIC
@@ -125,17 +142,17 @@ endif()
 # This ensures consumers only need to link against status-keycard-qt
 if(NOT BUILD_SHARED_LIBS)
     message(STATUS "Building status-keycard-qt as STATIC library - bundling keycard-qt")
-    
+
     # Use a custom command to combine the static libraries after build
     # This is platform-specific:
     # - On Unix/macOS: Use ar or libtool
     # - On Windows: Use lib.exe
-    
+
     if(APPLE)
         # On macOS and iOS, use libtool to combine static libraries
         add_custom_command(TARGET status-keycard-qt POST_BUILD
             COMMAND ${CMAKE_COMMAND} -E echo "Bundling keycard-qt into status-keycard-qt..."
-            COMMAND libtool -static -o 
+            COMMAND libtool -static -o
                 $<TARGET_FILE:status-keycard-qt>.tmp
                 $<TARGET_FILE:status-keycard-qt>
                 $<TARGET_FILE:keycard-qt>
@@ -176,7 +193,7 @@ if(NOT BUILD_SHARED_LIBS)
             VERBATIM
         )
     endif()
-    
+
     # Ensure keycard-qt is built before we try to bundle it
     add_dependencies(status-keycard-qt keycard-qt)
 endif()
@@ -222,20 +239,20 @@ endif()
 if((ANDROID OR IOS) AND OPENSSL_CRYPTO_LIBRARY)
     message(STATUS "Linking status-keycard-qt against OpenSSL crypto library: ${OPENSSL_CRYPTO_LIBRARY}")
     target_link_libraries(status-keycard-qt PUBLIC ${OPENSSL_CRYPTO_LIBRARY})
-    
+
     # Check if OpenSSL headers are available
     set(OPENSSL_INCLUDES_AVAILABLE FALSE)
-    
+
     # Add include directories
     # For OpenSSL 3.x on Android/iOS, we can use source headers directly
     set(OPENSSL_INCLUDES_AVAILABLE FALSE)
-    
+
     # Check if source headers exist (these are the main API headers)
     if(EXISTS "${OPENSSL_SOURCE_INCLUDE_DIR}")
         message(STATUS "Adding OpenSSL source include dir: ${OPENSSL_SOURCE_INCLUDE_DIR}")
         target_include_directories(status-keycard-qt PRIVATE ${OPENSSL_SOURCE_INCLUDE_DIR})
         set(OPENSSL_INCLUDES_AVAILABLE TRUE)
-        
+
         # Also add build dir if it exists (has generated configuration.h)
         if(EXISTS "${OPENSSL_BUILD_INCLUDE_DIR}")
             message(STATUS "Adding OpenSSL build include dir: ${OPENSSL_BUILD_INCLUDE_DIR}")
@@ -247,7 +264,7 @@ if((ANDROID OR IOS) AND OPENSSL_CRYPTO_LIBRARY)
         message(WARNING "OpenSSL source include dir not found: ${OPENSSL_SOURCE_INCLUDE_DIR}")
         message(WARNING "OpenSSL headers not available. Building WITHOUT OpenSSL support.")
     endif()
-    
+
     # Define KEYCARD_QT_HAS_OPENSSL if we have headers AND library
     if(OPENSSL_INCLUDES_AVAILABLE AND EXISTS "${OPENSSL_CRYPTO_LIBRARY}")
         target_compile_definitions(status-keycard-qt PRIVATE KEYCARD_QT_HAS_OPENSSL)

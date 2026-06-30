@@ -9,6 +9,12 @@
 #include <memory>
 #include <cstring>
 
+#ifdef USE_SIMULATED_KEYCARD
+#include "session/simulated_channel_backend.h"
+#include "keycard-qt/keycard_channel.h"
+#include <cstdlib>
+#endif
+
 // Context structure
 struct StatusKeycardContextImpl {
     std::unique_ptr<StatusKeycard::RpcService> rpcService;
@@ -29,7 +35,17 @@ struct StatusKeycardContextImpl {
         int argc = 0;
         char* argv[] = {nullptr};
 
+#ifdef USE_SIMULATED_KEYCARD
+        {
+            // Test build: drive a jcardsim-backed simulator instead of a physical reader.
+            auto* simBackend = new StatusKeycard::SimulatedChannelBackend();
+            const char* ep = std::getenv("STATUS_KEYCARD_SIM_ENDPOINT");
+            simBackend->attach(ep ? QString::fromUtf8(ep) : QStringLiteral("127.0.0.1:9025"));
+            channel = std::make_shared<Keycard::KeycardChannel>(simBackend);
+        }
+#else
         channel = std::make_shared<Keycard::KeycardChannel>();
+#endif
         // Stop detection immediately - the PCSC backend starts detection in its constructor, don't detect cards
         // until Start() is called and the storage path is configured.
         // SessionManager::start() will call startDetection() at the right time.
@@ -193,5 +209,61 @@ char* KeycardCallRPC(const char* params) {
     ensure_global_context();
     return KeycardCallRPCWithContext(g_global_context, params);
 }
+
+#ifdef USE_SIMULATED_KEYCARD
+// ============================================================================
+// Test-only control (simulated keycard backend)
+// ============================================================================
+
+static StatusKeycard::SimulatedChannelBackend* sim_backend() {
+    ensure_global_context();
+    auto* impl = reinterpret_cast<StatusKeycardContextImpl*>(g_global_context);
+    if (!impl || !impl->channel) {
+        return nullptr;
+    }
+    return dynamic_cast<StatusKeycard::SimulatedChannelBackend*>(impl->channel->backend());
+}
+
+static char* sim_result(bool ok, const char* error) {
+    if (ok) {
+        return strdup(R"({"error":""})");
+    }
+    QString json = QStringLiteral("{\"error\":\"%1\"}").arg(QString::fromUtf8(error));
+    return strdup(json.toUtf8().constData());
+}
+
+char* KeycardTestCreateCard(const char* cardId) {
+    auto* b = sim_backend();
+    if (!b || !cardId) return sim_result(false, "simulated backend not available");
+    return sim_result(b->createCard(QString::fromUtf8(cardId)), "createCard failed");
+}
+
+char* KeycardTestInsertCard(const char* cardId) {
+    auto* b = sim_backend();
+    if (!b || !cardId) return sim_result(false, "simulated backend not available");
+    return sim_result(b->insertCard(QString::fromUtf8(cardId)), "insertCard failed");
+}
+
+char* KeycardTestRemoveCard(void) {
+    auto* b = sim_backend();
+    if (!b) return sim_result(false, "simulated backend not available");
+    b->removeCard();
+    return sim_result(true, "");
+}
+
+char* KeycardTestPlugReader(void) {
+    auto* b = sim_backend();
+    if (!b) return sim_result(false, "simulated backend not available");
+    b->plugReader();
+    return sim_result(true, "");
+}
+
+char* KeycardTestUnplugReader(void) {
+    auto* b = sim_backend();
+    if (!b) return sim_result(false, "simulated backend not available");
+    b->unplugReader();
+    return sim_result(true, "");
+}
+#endif // USE_SIMULATED_KEYCARD
 
 } // extern "C"
