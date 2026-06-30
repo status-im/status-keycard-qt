@@ -8,7 +8,7 @@ extern "C" {
 /**
  * @file status_keycard.h
  * @brief C API for Status Keycard - Compatible with nim-keycard-go
- * 
+ *
  * This library provides the EXACT same C API as status-keycard-go
  * so that nim-keycard-go can link to it without any changes.
  */
@@ -43,6 +43,30 @@ void KeycardSetSignalEventCallback(SignalCallback callback);
 void Free(void* param);
 
 // ============================================================================
+// Test-only control (simulated keycard backend), present ONLY when the library
+// is built with USE_SIMULATED_KEYCARD.
+// Drives a jcardsim-backed simulator (test/keycard-simulator) instead of a reader.
+// Each returns a JSON string ({"error":""} on success) that must be freed with Free().
+// ============================================================================
+
+#ifdef USE_SIMULATED_KEYCARD
+
+/** Create a fresh/empty simulated card by id (added to the map, not inserted). */
+char* KeycardTestCreateCard(const char* cardId);
+
+/** Insert (and create if needed) a simulated card by id; emits card detection. */
+char* KeycardTestInsertCard(const char* cardId);
+
+/** Remove the currently inserted simulated card. */
+char* KeycardTestRemoveCard(void);
+
+/** Simulate the reader being plugged in / unplugged. */
+char* KeycardTestPlugReader(void);
+char* KeycardTestUnplugReader(void);
+
+#endif // USE_SIMULATED_KEYCARD
+
+// ============================================================================
 // Android JNI Support (not part of original API)
 // ============================================================================
 
@@ -63,7 +87,7 @@ void Free(void* param);
  * @param env JNI environment
  * @param tag Android Tag object (jobject)
  * @return 1 if successful, 0 if failed
- * 
+ *
  * This function is called from Java when an NFC tag is detected.
  * It extracts the IsoDep interface and passes it to the KeycardChannel.
  */
