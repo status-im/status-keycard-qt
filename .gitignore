@@ -33,6 +33,7 @@ ui_*.h
 *.lib
 *.la
 *.lo
+*.class
 *.slo
 
 # IDE
