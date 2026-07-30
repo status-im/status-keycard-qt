@@ -158,6 +158,8 @@ private slots:
         QCOMPARE(sessionStateToString(SessionState::Authorized), QString("authorized"));
         QCOMPARE(sessionStateToString(SessionState::BlockedPIN), QString("blocked-pin"));
         QCOMPARE(sessionStateToString(SessionState::BlockedPUK), QString("blocked-puk"));
+        QCOMPARE(sessionStateToString(SessionState::PairingError), QString("pairing-error"));
+        QCOMPARE(sessionStateToString(SessionState::NoAvailablePairingSlots), QString("no-available-pairing-slots"));
     }
 
     void testLastError()

@@ -1,6 +1,7 @@
 #pragma once
 
 #include "session_state.h"
+#include "pairing_password_holder.h"
 #include <keycard-qt/i_communication_manager.h>
 #include <keycard-qt/types.h>
 #include <QObject>
@@ -39,6 +40,16 @@ public:
      */
     void setCommunicationManager(std::shared_ptr<Keycard::ICommunicationManager> commMgr);
     std::shared_ptr<Keycard::ICommunicationManager> communicationManager() const { return m_commMgr; }
+
+    /**
+     * @brief Set the holder feeding the CommandSet's pairing password provider
+     * @param holder Holder shared with the provider callback installed at CommandSet construction
+     *
+     * Composite operations publish their `pairingPassword` parameter here so that any pairing
+     * they trigger authenticates with it. Without a holder, pairing always uses the default
+     * password and cards carrying a custom one cannot be paired.
+     */
+    void setPairingPasswordHolder(std::shared_ptr<PairingPasswordHolder> holder) { m_pairingPassword = holder; }
 
     // Session lifecycle
     bool start(bool logEnabled = false, const QString& logFilePath = QString());
@@ -89,7 +100,7 @@ public:
     };
     ExportExtendedPublicKeyResult exportExtendedPublicKey(const QString& keyUid, const QString& pin, const QString& path,
         bool exportMasterAddress, const QString& storageFilePath, bool logEnabled = false,
-        const QString& logFilePath = QString());
+        const QString& logFilePath = QString(), const QString& pairingPassword = QString());
 
     struct LoginKeys {
         KeyPair whisperPrivateKey;
@@ -111,7 +122,7 @@ public:
     RecoverKeys login(const QString& keyUid, const QString& pin,
                     const QString& xPubPath = QString(),
                     bool logEnabled = false, const QString& logFilePath = QString(),
-                    bool extendedResponse = false);
+                    bool extendedResponse = false, const QString& pairingPassword = QString());
 
     RecoverKeys exportRecoverKeys(bool isMainCommand = true);
     RecoverKeys recover(const QString& pin, const QString& puk, const QString& pairingPassword, const QString& mnemonic,
@@ -135,22 +146,24 @@ public:
     };
     ExportPublicKeyResult exportPublicKey(const QString& keyUid, const QString& pin, const QStringList& paths,
         bool exportPrivate, bool exportMasterAddress, const QString& storageFilePath,
-        bool logEnabled = false, const QString& logFilePath = QString());
+        bool logEnabled = false, const QString& logFilePath = QString(),
+        const QString& pairingPassword = QString());
 
     bool changeKeycardPIN(const QString& keyUid, const QString& pin, const QString& newPIN,
         const QString& storageFilePath, bool logEnabled = false, const QString& logFilePath = QString(),
-        const QString& keycardUid = QString());
+        const QString& keycardUid = QString(), const QString& pairingPassword = QString());
     bool changeKeycardPUK(const QString& keyUid, const QString& pin, const QString& newPUK,
         const QString& storageFilePath, bool logEnabled = false, const QString& logFilePath = QString(),
-        const QString& keycardUid = QString());
+        const QString& keycardUid = QString(), const QString& pairingPassword = QString());
     bool unblockUsingPUK(const QString& keyUid, const QString& puk, const QString& newPIN,
         const QString& storageFilePath, bool logEnabled = false, const QString& logFilePath = QString(),
-        const QString& keycardUid = QString());
+        const QString& keycardUid = QString(), const QString& pairingPassword = QString());
 
     Metadata getKeycardMetadata(const QString& pin, const QString& storageFilePath, bool logEnabled = false,
-        const QString& logFilePath = QString());
+        const QString& logFilePath = QString(), const QString& pairingPassword = QString());
     bool storeKeycardMetadata(const QString& pin, const QString& name, const QStringList& paths,
-        const QString& storageFilePath, bool logEnabled = false, const QString& logFilePath = QString());
+        const QString& storageFilePath, bool logEnabled = false, const QString& logFilePath = QString(),
+        const QString& pairingPassword = QString());
 
     struct SignResult {
         QString r;   // 32-byte hex
@@ -159,10 +172,11 @@ public:
         SignResult() : v(0) {}
     };
     SignResult sign(const QString& keyUid, const QString& pin, const QString& txHash, const QString& path,
-        const QString& storageFilePath, bool logEnabled = false, const QString& logFilePath = QString());
+        const QString& storageFilePath, bool logEnabled = false, const QString& logFilePath = QString(),
+        const QString& pairingPassword = QString());
 
     bool factoryResetKeycard(const QString& storageFilePath, bool logEnabled = false, const QString& logFilePath = QString(),
-        const QString& keycardUid = QString());
+        const QString& keycardUid = QString(), const QString& pairingPassword = QString());
 
     // Status structures (matching status-keycard-go exactly)
     struct Wallet {
@@ -252,6 +266,8 @@ private:
 
     // Keycard components (uses interface for testability)
     std::shared_ptr<Keycard::ICommunicationManager> m_commMgr;
+
+    std::shared_ptr<PairingPasswordHolder> m_pairingPassword;
 
     // Cached card state
     Keycard::ApplicationInfo m_appInfo;

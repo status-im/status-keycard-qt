@@ -99,6 +99,30 @@ Requests use standard JSON-RPC 2.0:
 | `keycard.Stop` | Stop the session | – |
 | `keycard.CancelCurrentOperation` | Cancel the in-flight operation | – |
 
+#### Pairing password
+
+Every method above also accepts an optional `pairingPassword`. Pairing happens implicitly
+whenever a card is detected and no stored pairing exists for it; when the parameter is omitted or
+empty, the default password (`KeycardDefaultPairing`) is used, which is what cards initialized
+through `keycard.Recover` / `keycard.Load` carry.
+
+Cards provisioned elsewhere (e.g. on the Keycard shell) may use a custom pairing password. There
+is no way to know this in advance, so the expected client flow is:
+
+1. Run the operation without `pairingPassword`.
+2. If it fails and the session state is `pairing-error`, ask the user for the pairing password.
+3. Re-run the same operation with `pairingPassword` set.
+
+A failed pairing attempt consumes no pairing slot and there is no retry counter, so step 3 can be
+repeated. Once pairing succeeds the derived key is persisted to `storageFilePath` and the password
+is not needed again for that card.
+
+`pairing-error` means specifically "wrong pairing password" and is distinct from
+`no-available-pairing-slots`, which is not recoverable by supplying a password.
+
+For `keycard.Recover` and `keycard.Load` the parameter does double duty: it is the password
+written to the card by INIT *and* the password used for the pairing that follows.
+
 All operation methods accept optional `logEnabled` / `logFilePath` params and
 implicitly start card detection — they **block until a card is ready** (or the
 operation is cancelled via `keycard.CancelCurrentOperation`).
