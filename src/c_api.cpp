@@ -1,6 +1,7 @@
 #include "status-keycard-qt/status_keycard.h"
 #include "rpc/rpc_service.h"
 #include "session/session_manager.h"
+#include "session/pairing_password_holder.h"
 #include "signal_manager.h"
 #include "storage/file_pairing_storage.h"
 #include "keycard-qt/communication_manager.h"
@@ -24,6 +25,7 @@ struct StatusKeycardContextImpl {
     std::shared_ptr<Keycard::CommandSet> commandSet;  // CommandSet used by SessionManager
     std::shared_ptr<Keycard::KeycardChannel> channel;  // Global channel instance
     std::shared_ptr<Keycard::IPairingStorage> pairingStorage;
+    std::shared_ptr<StatusKeycard::PairingPasswordHolder> pairingPassword;  // Feeds the password provider
 
     StatusKeycardContextImpl()
         : signalCallback(nullptr)
@@ -53,8 +55,14 @@ struct StatusKeycardContextImpl {
 
         pairingStorage = std::make_shared<StatusKeycard::FilePairingStorage>();
 
-        // Create password provider
-        auto passwordProvider = [](const QString& cardUID) { return "KeycardDefaultPairing"; };
+        // Create password provider. The CommandSet fixes this callback at construction time, so it
+        // reads through a holder that composite operations publish their `pairingPassword` parameter
+        // to. Cards provisioned by the app carry the default password; cards provisioned elsewhere
+        // (e.g. on the Keycard shell) may carry a custom one the user has to supply.
+        pairingPassword = std::make_shared<StatusKeycard::PairingPasswordHolder>();
+        auto passwordProvider = [holder = pairingPassword](const QString& cardUID) {
+            return holder->getOrDefault();
+        };
 
         // Create CommandSet used by SessionManager
         commandSet = std::make_shared<Keycard::CommandSet>(
@@ -74,6 +82,7 @@ struct StatusKeycardContextImpl {
         // Create RPC service and pass CommunicationManager
         rpcService = std::make_unique<StatusKeycard::RpcService>();
         rpcService->setCommunicationManager(commMgr);
+        rpcService->sessionManager()->setPairingPasswordHolder(pairingPassword);
 
         // Get signal manager instance
         signalManager = StatusKeycard::SignalManager::instance();

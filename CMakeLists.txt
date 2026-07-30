@@ -93,6 +93,7 @@ set(SOURCES
     src/utils/signature_utils.cpp
     src/session/session_manager.cpp
     src/session/session_composite_operations.cpp
+    src/session/pairing_password_holder.cpp
     src/storage/file_pairing_storage.cpp
     src/signal_manager.cpp
     src/rpc/rpc_service.cpp

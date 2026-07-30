@@ -16,6 +16,7 @@ QJsonObject RpcService::handleLogin(quint64 id, const QJsonObject& params) {
     bool logEnabled = params["logEnabled"].toBool(false);
     QString logFilePath = params["logFilePath"].toString();
     bool extendedResponse = params["extendedResponse"].toBool(false);
+    QString pairingPassword = params["pairingPassword"].toString();
     if (storagePath.isEmpty()) {
         return createErrorResponse(id, -32602, "Missing required parameter: storageFilePath");
     }
@@ -34,7 +35,8 @@ QJsonObject RpcService::handleLogin(quint64 id, const QJsonObject& params) {
         return validationError;
     }
 
-    SessionManager::RecoverKeys keys = m_sessionManager->login(keyUidWithout0x, pin, xPubPath, logEnabled, logFilePath, extendedResponse);
+    SessionManager::RecoverKeys keys = m_sessionManager->login(keyUidWithout0x, pin, xPubPath, logEnabled, logFilePath,
+        extendedResponse, pairingPassword);
     SignalManager::instance()->emitStatusChanged(m_sessionManager->getStatus());
     if (!m_sessionManager->lastError().isEmpty()) {
         return createErrorResponse(id, -32000, m_sessionManager->lastError());
@@ -151,6 +153,7 @@ QJsonObject RpcService::handleExportExtendedPublicKey(quint64 id, const QJsonObj
     bool exportMasterAddress = params["exportMasterAddr"].toBool(false);
     bool logEnabled = params["logEnabled"].toBool(false);
     QString logFilePath = params["logFilePath"].toString();
+    QString pairingPassword = params["pairingPassword"].toString();
     if (storagePath.isEmpty()) {
         return createErrorResponse(id, -32602, "Missing required parameter: storageFilePath");
     }
@@ -174,7 +177,7 @@ QJsonObject RpcService::handleExportExtendedPublicKey(quint64 id, const QJsonObj
     }
 
     SessionManager::ExportExtendedPublicKeyResult result = m_sessionManager->exportExtendedPublicKey(keyUidWithout0x,
-        pin, path, exportMasterAddress, storagePath, logEnabled, logFilePath);
+        pin, path, exportMasterAddress, storagePath, logEnabled, logFilePath, pairingPassword);
     SignalManager::instance()->emitStatusChanged(m_sessionManager->getStatus());
     if (!m_sessionManager->lastError().isEmpty()) {
         return createErrorResponse(id, -32000, m_sessionManager->lastError());
@@ -206,6 +209,7 @@ QJsonObject RpcService::handleExportPublicKey(quint64 id, const QJsonObject& par
     bool exportMasterAddress = params["exportMasterAddress"].toBool(false);
     bool logEnabled = params["logEnabled"].toBool(false);
     QString logFilePath = params["logFilePath"].toString();
+    QString pairingPassword = params["pairingPassword"].toString();
     if (storagePath.isEmpty()) {
         return createErrorResponse(id, -32602, "Missing required parameter: storageFilePath");
     }
@@ -243,7 +247,7 @@ QJsonObject RpcService::handleExportPublicKey(quint64 id, const QJsonObject& par
     }
 
     SessionManager::ExportPublicKeyResult result = m_sessionManager->exportPublicKey(keyUidWithout0x, pin, paths,
-        exportPrivate, exportMasterAddress, storagePath, logEnabled, logFilePath);
+        exportPrivate, exportMasterAddress, storagePath, logEnabled, logFilePath, pairingPassword);
     SignalManager::instance()->emitStatusChanged(m_sessionManager->getStatus());
     if (!m_sessionManager->lastError().isEmpty()) {
         return createErrorResponse(id, -32000, m_sessionManager->lastError());
@@ -297,6 +301,7 @@ QJsonObject RpcService::handleChangeKeycardPIN(quint64 id, const QJsonObject& pa
     bool logEnabled = params["logEnabled"].toBool(false);
     QString logFilePath = params["logFilePath"].toString();
     QString keycardUid = remove0xPrefix(params["keycardUid"].toString());
+    QString pairingPassword = params["pairingPassword"].toString();
 
     if (storagePath.isEmpty()) {
         return createErrorResponse(id, -32602, "Missing required parameter: storageFilePath");
@@ -321,7 +326,7 @@ QJsonObject RpcService::handleChangeKeycardPIN(quint64 id, const QJsonObject& pa
     }
 
     bool success = m_sessionManager->changeKeycardPIN(keyUidWithout0x, pin, newPin, storagePath, logEnabled, logFilePath,
-        keycardUid);
+        keycardUid, pairingPassword);
     SignalManager::instance()->emitStatusChanged(m_sessionManager->getStatus());
     if (!success) {
         return createErrorResponse(id, -32000, m_sessionManager->lastError());
@@ -338,6 +343,7 @@ QJsonObject RpcService::handleChangeKeycardPUK(quint64 id, const QJsonObject& pa
     bool logEnabled = params["logEnabled"].toBool(false);
     QString logFilePath = params["logFilePath"].toString();
     QString keycardUid = remove0xPrefix(params["keycardUid"].toString());
+    QString pairingPassword = params["pairingPassword"].toString();
 
     if (storagePath.isEmpty()) {
         return createErrorResponse(id, -32602, "Missing required parameter: storageFilePath");
@@ -362,7 +368,7 @@ QJsonObject RpcService::handleChangeKeycardPUK(quint64 id, const QJsonObject& pa
     }
 
     bool success = m_sessionManager->changeKeycardPUK(keyUidWithout0x, pin, newPuk, storagePath, logEnabled, logFilePath,
-        keycardUid);
+        keycardUid, pairingPassword);
     SignalManager::instance()->emitStatusChanged(m_sessionManager->getStatus());
     if (!success) {
         return createErrorResponse(id, -32000, m_sessionManager->lastError());
@@ -379,6 +385,7 @@ QJsonObject RpcService::handleUnblockUsingPUK(quint64 id, const QJsonObject& par
     bool logEnabled = params["logEnabled"].toBool(false);
     QString logFilePath = params["logFilePath"].toString();
     QString keycardUid = remove0xPrefix(params["keycardUid"].toString());
+    QString pairingPassword = params["pairingPassword"].toString();
 
     if (storagePath.isEmpty()) {
         return createErrorResponse(id, -32602, "Missing required parameter: storageFilePath");
@@ -403,7 +410,7 @@ QJsonObject RpcService::handleUnblockUsingPUK(quint64 id, const QJsonObject& par
     }
 
     bool success = m_sessionManager->unblockUsingPUK(keyUidWithout0x, puk, newPin, storagePath, logEnabled, logFilePath,
-        keycardUid);
+        keycardUid, pairingPassword);
     SignalManager::instance()->emitStatusChanged(m_sessionManager->getStatus());
     if (!success) {
         return createErrorResponse(id, -32000, m_sessionManager->lastError());
@@ -417,6 +424,7 @@ QJsonObject RpcService::handleGetKeycardMetadata(quint64 id, const QJsonObject& 
     QString pin = params["pin"].toString();  // Optional — if provided, resolves wallet addresses/publicKeys
     bool logEnabled = params["logEnabled"].toBool(false);
     QString logFilePath = params["logFilePath"].toString();
+    QString pairingPassword = params["pairingPassword"].toString();
 
     if (storagePath.isEmpty()) {
         return createErrorResponse(id, -32602, "Missing required parameter: storageFilePath");
@@ -431,7 +439,8 @@ QJsonObject RpcService::handleGetKeycardMetadata(quint64 id, const QJsonObject& 
         return validationError;
     }
 
-    SessionManager::Metadata metadata = m_sessionManager->getKeycardMetadata(pin, storagePath, logEnabled, logFilePath);
+    SessionManager::Metadata metadata = m_sessionManager->getKeycardMetadata(pin, storagePath, logEnabled, logFilePath,
+        pairingPassword);
     SignalManager::instance()->emitStatusChanged(m_sessionManager->getStatus());
     if (!m_sessionManager->lastError().isEmpty()) {
         return createErrorResponse(id, -32000, m_sessionManager->lastError());
@@ -460,6 +469,7 @@ QJsonObject RpcService::handleStoreKeycardMetadata(quint64 id, const QJsonObject
     QJsonArray pathsArray = params["paths"].toArray();
     bool logEnabled = params["logEnabled"].toBool(false);
     QString logFilePath = params["logFilePath"].toString();
+    QString pairingPassword = params["pairingPassword"].toString();
 
     if (storagePath.isEmpty()) {
         return createErrorResponse(id, -32602, "Missing required parameter: storageFilePath");
@@ -479,7 +489,8 @@ QJsonObject RpcService::handleStoreKeycardMetadata(quint64 id, const QJsonObject
         paths.append(val.toString());
     }
 
-    bool success = m_sessionManager->storeKeycardMetadata(pin, name, paths, storagePath, logEnabled, logFilePath);
+    bool success = m_sessionManager->storeKeycardMetadata(pin, name, paths, storagePath, logEnabled, logFilePath,
+        pairingPassword);
     SignalManager::instance()->emitStatusChanged(m_sessionManager->getStatus());
     if (!success) {
         return createErrorResponse(id, -32000, m_sessionManager->lastError());
@@ -496,6 +507,7 @@ QJsonObject RpcService::handleSign(quint64 id, const QJsonObject& params) {
     QString path = params["path"].toString();
     bool logEnabled = params["logEnabled"].toBool(false);
     QString logFilePath = params["logFilePath"].toString();
+    QString pairingPassword = params["pairingPassword"].toString();
 
     if (storagePath.isEmpty()) {
         return createErrorResponse(id, -32602, "Missing required parameter: storageFilePath");
@@ -525,7 +537,7 @@ QJsonObject RpcService::handleSign(quint64 id, const QJsonObject& params) {
     }
 
     SessionManager::SignResult result = m_sessionManager->sign(keyUidWithout0x, pin, txHashClean, path, storagePath,
-        logEnabled, logFilePath);
+        logEnabled, logFilePath, pairingPassword);
     SignalManager::instance()->emitStatusChanged(m_sessionManager->getStatus());
     if (!m_sessionManager->lastError().isEmpty()) {
         return createErrorResponse(id, -32000, m_sessionManager->lastError());
@@ -544,6 +556,7 @@ QJsonObject RpcService::handleFactoryResetKeycard(quint64 id, const QJsonObject&
     bool logEnabled = params["logEnabled"].toBool(false);
     QString logFilePath = params["logFilePath"].toString();
     QString keycardUid = remove0xPrefix(params["keycardUid"].toString());
+    QString pairingPassword = params["pairingPassword"].toString();
 
     if (storagePath.isEmpty()) {
         return createErrorResponse(id, -32602, "Missing required parameter: storageFilePath");
@@ -554,7 +567,8 @@ QJsonObject RpcService::handleFactoryResetKeycard(quint64 id, const QJsonObject&
         return validationError;
     }
 
-    bool success = m_sessionManager->factoryResetKeycard(storagePath, logEnabled, logFilePath, keycardUid);
+    bool success = m_sessionManager->factoryResetKeycard(storagePath, logEnabled, logFilePath, keycardUid,
+        pairingPassword);
     SignalManager::instance()->emitStatusChanged(m_sessionManager->getStatus());
     if (!success) {
         return createErrorResponse(id, -32000, m_sessionManager->lastError());

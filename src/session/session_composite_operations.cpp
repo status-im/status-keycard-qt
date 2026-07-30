@@ -45,7 +45,8 @@ bool SessionManager::validateCompositeKeycardUid(const QString& keycardUid, cons
 }
 
 SessionManager::RecoverKeys SessionManager::login(const QString& keyUid, const QString& pin,
-    const QString& xPubPath, bool logEnabled, const QString& logFilePath, bool extendedResponse)
+    const QString& xPubPath, bool logEnabled, const QString& logFilePath, bool extendedResponse,
+    const QString& pairingPassword)
 {
     qDebug() << "StatusKeycardQt::SessionManager::login() xPubPath:" << xPubPath;
 
@@ -57,6 +58,8 @@ SessionManager::RecoverKeys SessionManager::login(const QString& keyUid, const Q
         QMutexLocker locker(&m_cardReadyMutex);
         m_compositeMethodCallCancelled = false;
     }
+
+    ScopedPairingPassword pairingPasswordScope(m_pairingPassword, pairingPassword);
 
     if (!ensureKeycardCommunication()) {
         return RecoverKeys();
@@ -184,6 +187,8 @@ SessionManager::RecoverKeys SessionManager::recover(const QString& pin, const QS
         m_compositeMethodCallCancelled = false;
     }
 
+    ScopedPairingPassword pairingPasswordScope(m_pairingPassword, pairingPassword);
+
     if (!ensureKeycardCommunication()) {
         return RecoverKeys();
     }
@@ -245,6 +250,8 @@ SessionManager::RecoverKeys SessionManager::load(const QString& pin, const QStri
         m_compositeMethodCallCancelled = false;
     }
 
+    ScopedPairingPassword pairingPasswordScope(m_pairingPassword, pairingPassword);
+
     if (!ensureKeycardCommunication()) {
         return RecoverKeys();
     }
@@ -293,7 +300,7 @@ SessionManager::RecoverKeys SessionManager::load(const QString& pin, const QStri
 
 SessionManager::ExportExtendedPublicKeyResult SessionManager::exportExtendedPublicKey(const QString& keyUid, const QString& pin,
     const QString& path, bool exportMasterAddress, const QString& storageFilePath, bool logEnabled,
-    const QString& logFilePath)
+    const QString& logFilePath, const QString& pairingPassword)
 {
     Q_UNUSED(storageFilePath);
     qDebug() << "StatusKeycardQt::SessionManager::exportExtendedPublicKey() path:" << path;
@@ -304,6 +311,8 @@ SessionManager::ExportExtendedPublicKeyResult SessionManager::exportExtendedPubl
         QMutexLocker locker(&m_cardReadyMutex);
         m_compositeMethodCallCancelled = false;
     }
+
+    ScopedPairingPassword pairingPasswordScope(m_pairingPassword, pairingPassword);
 
     if (!ensureKeycardCommunication()) {
         return ExportExtendedPublicKeyResult();
@@ -374,7 +383,7 @@ SessionManager::ExportExtendedPublicKeyResult SessionManager::exportExtendedPubl
 
 SessionManager::ExportPublicKeyResult SessionManager::exportPublicKey(const QString& keyUid, const QString& pin,
     const QStringList& paths, bool exportPrivate, bool exportMasterAddress, const QString& storageFilePath,
-    bool logEnabled, const QString& logFilePath)
+    bool logEnabled, const QString& logFilePath, const QString& pairingPassword)
 {
     Q_UNUSED(storageFilePath);
     qDebug() << "StatusKeycardQt::SessionManager::exportPublicKey() paths:" << paths;
@@ -385,6 +394,8 @@ SessionManager::ExportPublicKeyResult SessionManager::exportPublicKey(const QStr
         QMutexLocker locker(&m_cardReadyMutex);
         m_compositeMethodCallCancelled = false;
     }
+
+    ScopedPairingPassword pairingPasswordScope(m_pairingPassword, pairingPassword);
 
     if (!ensureKeycardCommunication()) {
         return ExportPublicKeyResult();
@@ -440,7 +451,7 @@ SessionManager::ExportPublicKeyResult SessionManager::exportPublicKey(const QStr
 
 bool SessionManager::changeKeycardPIN(const QString& keyUid, const QString& pin, const QString& newPIN,
     const QString& storageFilePath, bool logEnabled, const QString& logFilePath,
-    const QString& keycardUid)
+    const QString& keycardUid, const QString& pairingPassword)
 {
     Q_UNUSED(storageFilePath);
     qDebug() << "StatusKeycardQt::SessionManager::changeKeycardPIN()";
@@ -451,6 +462,8 @@ bool SessionManager::changeKeycardPIN(const QString& keyUid, const QString& pin,
         QMutexLocker locker(&m_cardReadyMutex);
         m_compositeMethodCallCancelled = false;
     }
+
+    ScopedPairingPassword pairingPasswordScope(m_pairingPassword, pairingPassword);
 
     if (!ensureKeycardCommunication()) {
         return false;
@@ -509,7 +522,7 @@ bool SessionManager::changeKeycardPIN(const QString& keyUid, const QString& pin,
 
 bool SessionManager::changeKeycardPUK(const QString& keyUid, const QString& pin, const QString& newPUK,
     const QString& storageFilePath, bool logEnabled, const QString& logFilePath,
-    const QString& keycardUid)
+    const QString& keycardUid, const QString& pairingPassword)
 {
     Q_UNUSED(storageFilePath);
     qDebug() << "StatusKeycardQt::SessionManager::changeKeycardPUK()";
@@ -520,6 +533,8 @@ bool SessionManager::changeKeycardPUK(const QString& keyUid, const QString& pin,
         QMutexLocker locker(&m_cardReadyMutex);
         m_compositeMethodCallCancelled = false;
     }
+
+    ScopedPairingPassword pairingPasswordScope(m_pairingPassword, pairingPassword);
 
     if (!ensureKeycardCommunication()) {
         return false;
@@ -578,7 +593,7 @@ bool SessionManager::changeKeycardPUK(const QString& keyUid, const QString& pin,
 
 bool SessionManager::unblockUsingPUK(const QString& keyUid, const QString& puk, const QString& newPIN,
     const QString& storageFilePath, bool logEnabled, const QString& logFilePath,
-    const QString& keycardUid)
+    const QString& keycardUid, const QString& pairingPassword)
 {
     Q_UNUSED(storageFilePath);
     qDebug() << "StatusKeycardQt::SessionManager::unblockUsingPUK()";
@@ -589,6 +604,8 @@ bool SessionManager::unblockUsingPUK(const QString& keyUid, const QString& puk, 
         QMutexLocker locker(&m_cardReadyMutex);
         m_compositeMethodCallCancelled = false;
     }
+
+    ScopedPairingPassword pairingPasswordScope(m_pairingPassword, pairingPassword);
 
     if (!ensureKeycardCommunication()) {
         return false;
@@ -642,7 +659,7 @@ bool SessionManager::unblockUsingPUK(const QString& keyUid, const QString& puk, 
 }
 
 SessionManager::Metadata SessionManager::getKeycardMetadata(const QString& pin, const QString& storageFilePath,
-    bool logEnabled, const QString& logFilePath)
+    bool logEnabled, const QString& logFilePath, const QString& pairingPassword)
 {
     Q_UNUSED(storageFilePath);
     qDebug() << "StatusKeycardQt::SessionManager::getKeycardMetadata()";
@@ -653,6 +670,8 @@ SessionManager::Metadata SessionManager::getKeycardMetadata(const QString& pin, 
         QMutexLocker locker(&m_cardReadyMutex);
         m_compositeMethodCallCancelled = false;
     }
+
+    ScopedPairingPassword pairingPasswordScope(m_pairingPassword, pairingPassword);
 
     if (!ensureKeycardCommunication()) {
         return Metadata();
@@ -719,7 +738,8 @@ SessionManager::Metadata SessionManager::getKeycardMetadata(const QString& pin, 
 }
 
 bool SessionManager::storeKeycardMetadata(const QString& pin, const QString& name, const QStringList& paths,
-    const QString& storageFilePath, bool logEnabled, const QString& logFilePath)
+    const QString& storageFilePath, bool logEnabled, const QString& logFilePath,
+    const QString& pairingPassword)
 {
     Q_UNUSED(storageFilePath);
     qDebug() << "StatusKeycardQt::SessionManager::storeKeycardMetadata()";
@@ -730,6 +750,8 @@ bool SessionManager::storeKeycardMetadata(const QString& pin, const QString& nam
         QMutexLocker locker(&m_cardReadyMutex);
         m_compositeMethodCallCancelled = false;
     }
+
+    ScopedPairingPassword pairingPasswordScope(m_pairingPassword, pairingPassword);
 
     if (!ensureKeycardCommunication()) {
         return false;
@@ -774,7 +796,8 @@ bool SessionManager::storeKeycardMetadata(const QString& pin, const QString& nam
 }
 
 SessionManager::SignResult SessionManager::sign(const QString& keyUid, const QString& pin, const QString& txHash,
-    const QString& path, const QString& storageFilePath, bool logEnabled, const QString& logFilePath)
+    const QString& path, const QString& storageFilePath, bool logEnabled, const QString& logFilePath,
+    const QString& pairingPassword)
 {
     Q_UNUSED(storageFilePath);
     qDebug() << "StatusKeycardQt::SessionManager::sign()";
@@ -785,6 +808,8 @@ SessionManager::SignResult SessionManager::sign(const QString& keyUid, const QSt
         QMutexLocker locker(&m_cardReadyMutex);
         m_compositeMethodCallCancelled = false;
     }
+
+    ScopedPairingPassword pairingPasswordScope(m_pairingPassword, pairingPassword);
 
     if (!ensureKeycardCommunication()) {
         return SignResult();
@@ -898,7 +923,8 @@ SessionManager::SignResult SessionManager::sign(const QString& keyUid, const QSt
 }
 
 bool SessionManager::factoryResetKeycard(const QString& storageFilePath,
-    bool logEnabled, const QString& logFilePath, const QString& keycardUid)
+    bool logEnabled, const QString& logFilePath, const QString& keycardUid,
+    const QString& pairingPassword)
 {
     Q_UNUSED(storageFilePath);
     qDebug() << "StatusKeycardQt::SessionManager::factoryResetKeycard()";
@@ -909,6 +935,8 @@ bool SessionManager::factoryResetKeycard(const QString& storageFilePath,
         QMutexLocker locker(&m_cardReadyMutex);
         m_compositeMethodCallCancelled = false;
     }
+
+    ScopedPairingPassword pairingPasswordScope(m_pairingPassword, pairingPassword);
 
     if (!ensureKeycardCommunication()) {
         return false;

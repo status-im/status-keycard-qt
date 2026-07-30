@@ -232,6 +232,9 @@ void SessionManager::onCardInitialized(const Keycard::CardInitializationResult& 
             setState(SessionState::NotKeycard);
         } else if (result.error.contains("6A84") || result.error.contains("No available pairing slots")) {
             setState(SessionState::NoAvailablePairingSlots);
+        } else if (result.error.contains("wrong pairing password") || result.error.contains("Invalid card cryptogram")) {
+            setState(SessionState::PairingError);
+            setError(result.error);
         } else {
             setState(SessionState::ConnectionError);
             setError(result.error);
