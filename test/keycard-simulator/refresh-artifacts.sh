@@ -5,8 +5,11 @@
 # the simulator needs ONLY a JVM (no status-keycard checkout, JavaCard SDK, or Gradle).
 #
 # STATUS_KEYCARD_DIR is REQUIRED (no default — these jars are committed and shared by everyone).
-# The checkout must be at the version's SHA (see versions/<version>/version.properties) and built:
-#     cd "$STATUS_KEYCARD_DIR" && ./gradlew compileJava        # produces build/classes/java/main
+# The checkout must be at the version's SHA (see versions/<version>/version.properties). The applet is
+# compiled from source below (javac --release), so you do NOT need `./gradlew compileJava` — which
+# fails on JDK 9+ anyway because status-keycard targets source/target 1.6. You only need the prebuilt
+# jcardsim + keycard-math jars present in the checkout (and, for 4.0, the SDK + bcprov in the Gradle
+# cache, produced by building status-keycard's SDK module).
 #
 # Usage:
 #     STATUS_KEYCARD_DIR=/path/to/status-keycard ./refresh-artifacts.sh <version>     # e.g. 3.2
@@ -34,15 +37,26 @@ needsPersonalization="$(getprop needsPersonalization)"
 
 jcardsim="$SK/jcardsim/jcardsim-3.0.5-SNAPSHOT.jar"
 math="$SK/keycard-math/keycard-math.jar"
-classes="$SK/build/classes/java/main"
-[ -f "$jcardsim" ] || { echo "ERROR: missing $jcardsim"; exit 1; }
-[ -f "$math" ]     || { echo "ERROR: missing $math"; exit 1; }
-[ -d "$classes" ]  || { echo "ERROR: missing $classes (run ./gradlew compileJava in status-keycard)"; exit 1; }
+appletSrc="$SK/src/main/java/im/status/keycard"
+[ -f "$jcardsim" ]  || { echo "ERROR: missing $jcardsim"; exit 1; }
+[ -f "$math" ]      || { echo "ERROR: missing $math"; exit 1; }
+[ -d "$appletSrc" ] || { echo "ERROR: missing applet source $appletSrc (checkout status-keycard)"; exit 1; }
 
 mkdir -p "$HERE/libs/common" "$VDIR/libs"
 cp "$jcardsim" "$HERE/libs/common/jcardsim-3.0.5-SNAPSHOT.jar"   # version-independent (shared)
 cp "$math"     "$VDIR/libs/keycard-math.jar"
-jar cf "$VDIR/libs/keycard-applet.jar" -C "$classes" .
+
+# Compile the applet at a portable bytecode level instead of packaging status-keycard's gradle output
+# (build/classes/java/main). The applet is the highest-versioned class on the simulator classpath, so
+# if it's built with a newer JDK (e.g. 17 -> class 61) it forces that JRE at runtime — which breaks a
+# double-clicked macOS app whose JRE (resolved via /usr/bin/java, not your terminal's PATH) may be
+# older. JavaCard source is Java 8-level, so 11 compiles cleanly and runs on any JRE >= 11.
+APPLET_RELEASE="${APPLET_RELEASE:-11}"
+appletOut="$(mktemp -d)"; trap 'rm -rf "$appletOut"' EXIT
+echo "Compiling applet (--release $APPLET_RELEASE) ..."
+javac --release "$APPLET_RELEASE" -cp "$jcardsim:$math" -d "$appletOut" \
+    $(find "$appletSrc" -name '*.java')
+jar cf "$VDIR/libs/keycard-applet.jar" -C "$appletOut" .
 
 # Versions that gate APDUs on a factory Ident certificate (4.0) also need the host SDK + BouncyCastle
 # (resolved into the Gradle cache by the status-keycard build) for personalization at newCard() time.
