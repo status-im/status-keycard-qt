@@ -88,13 +88,18 @@ print(s.recv(8192).decode())   # OK <ATR>  then  OK 8041<pubkey>9000
 `status-keycard` checkout at the version's SHA (`version.properties`):
 
 ```bash
-cd "$STATUS_KEYCARD_DIR" && git checkout <sha> && ./gradlew compileJava   # produces build/classes/java/main
+cd "$STATUS_KEYCARD_DIR" && git checkout <sha>   # need the jcardsim + keycard-math jars present here
 cd - && STATUS_KEYCARD_DIR="$STATUS_KEYCARD_DIR" ./refresh-artifacts.sh <version>
-./build.sh   # recompile, then commit the changed libs/
+./build.sh   # recompile the recipe, then commit the changed libs/
 ```
-`STATUS_KEYCARD_DIR` is required (no default). If `./gradlew compileJava` rejects
-`sourceCompatibility = 1.6`, compile the applet classes directly first:
-`javac -cp "jcardsim/jcardsim-3.0.5-SNAPSHOT.jar:keycard-math/keycard-math.jar" -d build/classes/java/main src/main/java/im/status/keycard/*.java`.
+`STATUS_KEYCARD_DIR` is required (no default). Do **not** run `./gradlew compileJava` — it fails on JDK 9+
+(status-keycard targets source/target 1.6) and isn't needed: `refresh-artifacts.sh` recompiles the applet
+from source with `javac --release 11` (override with `APPLET_RELEASE`) rather than reusing gradle's class
+files, so the vendored `keycard-applet.jar` stays runnable on any JRE ≥ 11. Otherwise, if built with a
+newer JDK (e.g. 17), it becomes the highest-versioned class on the classpath and forces that JRE at
+runtime — which breaks a double-clicked macOS app (whose JRE, via `/usr/bin/java`, may be older than your
+shell's). You only need the prebuilt `jcardsim`/`keycard-math` jars in the checkout (build just those
+modules if missing, e.g. `./gradlew :keycard-math:jar`).
 
 ## Provenance
 
