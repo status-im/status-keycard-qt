@@ -39,4 +39,23 @@ fi
 CP="$HERE/out/core:$VDIR/out:$HERE/libs/common/*:$VDIR/libs/*"
 echo "Starting keycard simulator: applet $VERSION, port $PORT, main $mainClass"
 
-exec java -noverify -cp "$CP" "$mainClass" "$PORT"
+java_bin() {
+    local c out
+    for c in \
+        ${JAVA_HOME:+"$JAVA_HOME/bin/java"} \
+        /opt/homebrew/opt/openjdk*/libexec/openjdk.jdk/Contents/Home/bin/java \
+        /usr/local/opt/openjdk*/libexec/openjdk.jdk/Contents/Home/bin/java \
+        "$(command -v java 2>/dev/null || true)"
+    do
+        [ -x "$c" ] || continue
+        out="$("$c" -version 2>&1 || true)"
+        case "$out" in *"Unable to locate a Java Runtime"*) continue ;; esac
+        echo "$c"
+        return 0
+    done
+    return 1
+}
+
+JAVA_BIN="$(java_bin)" || { echo "ERROR: java not found; install a JRE >= 11 or set JAVA_HOME." >&2; exit 1; }
+echo "Using java: $JAVA_BIN"
+exec "$JAVA_BIN" -noverify -cp "$CP" "$mainClass" "$PORT"
