@@ -16,6 +16,8 @@ PathInfo parsePath(const QString& path);
 
 QByteArray compressPublicKey(const QByteArray& uncompressedKey);
 
+QByteArray ripemd160(const QByteArray& data);
+
 QByteArray hash160(const QByteArray& data);
 
 QString serializeXpub(uint8_t depth, const QByteArray& parentFingerprint,

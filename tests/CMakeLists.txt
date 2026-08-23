@@ -36,6 +36,7 @@ add_keycard_test(test_rpc_service mocks/mock_communication_manager.cpp)
 add_keycard_test(test_session_manager mocks/mock_communication_manager.cpp)
 add_keycard_test(test_signal_manager)
 add_keycard_test(test_pairing_password_holder)
+add_keycard_test(test_bip32_xpub_helpers)
 
 # Coverage target (optional, requires gcov/lcov)
 if(CMAKE_BUILD_TYPE MATCHES "Debug")
