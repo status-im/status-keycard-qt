@@ -346,6 +346,19 @@ private slots:
                 m_manager->currentState() == SessionState::EmptyKeycard);
     }
 
+    void testDuplicateCardRemovedDoesNotReemitState()
+    {
+        m_manager->start();
+        m_mockComm->simulateCardDetected("test-uid");
+        m_mockComm->simulateCardRemoved();
+        QCOMPARE(m_manager->currentState(), SessionState::WaitingForCard);
+
+        const int afterFirstRemoval = m_stateChanges.size();
+        m_mockComm->simulateCardRemoved();
+        QCOMPARE(m_manager->currentState(), SessionState::WaitingForCard);
+        QCOMPARE(m_stateChanges.size(), afterFirstRemoval);
+    }
+
     void testBatchOperations()
     {
         m_manager->start();
