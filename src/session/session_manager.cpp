@@ -198,12 +198,17 @@ void SessionManager::stop()
 
 void SessionManager::setState(SessionState newState)
 {
-    qDebug() << "StatusKeycardQt::SessionManager::setState() - New state: "<< sessionStateToString(newState);
+    if (newState == m_state) {
+        return;
+    }
+
+    qDebug() << "StatusKeycardQt::SessionManager::setState() - New state:" << sessionStateToString(newState);
 
     SessionState oldState = m_state;
     m_state = newState;
 
-    // Wake any thread waiting for card readiness (e.g., login())
+    // Wake any thread waiting for card readiness (e.g., login()). Only on a
+    // real transition: waiters already woke when we first left WaitingForCard.
     if (newState != SessionState::WaitingForCard) {
         QMutexLocker locker(&m_cardReadyMutex);
         m_cardReadyCondition.wakeAll();
@@ -215,9 +220,7 @@ void SessionManager::setState(SessionState newState)
 
 void SessionManager::onCardInitialized(const Keycard::CardInitializationResult& result)
 {
-    qDebug() << "StatusKeycardQt::========================================";
-    qDebug() << "StatusKeycardQt::SessionManager: CARD INITIALIZED";
-    qDebug() << "StatusKeycardQt::========================================";
+    qDebug() << "StatusKeycardQt::SessionManager: card initialized";
 
     // Update cached state from CommunicationManager
     m_currentCardUID = result.uid;
@@ -267,9 +270,7 @@ void SessionManager::onCardInitialized(const Keycard::CardInitializationResult& 
 
 void SessionManager::onCardRemoved()
 {
-    qDebug() << "StatusKeycardQt::========================================";
-    qDebug() << "StatusKeycardQt::SessionManager: CARD REMOVED";
-    qDebug() << "StatusKeycardQt::========================================";
+    qDebug() << "StatusKeycardQt::SessionManager: card removed";
 
 #if defined(Q_OS_ANDROID) || defined(Q_OS_IOS)
     qDebug() << "StatusKeycardQt::Ignoring card removal on mobile";
@@ -290,9 +291,8 @@ void SessionManager::onCardRemoved()
 
 void SessionManager::onReaderAvailabilityChanged(bool available)
 {
-    qDebug() << "StatusKeycardQt::========================================";
-    qDebug() << "StatusKeycardQt::SessionManager: READER AVAILABILITY CHANGED -" << (available ? "available" : "removed");
-    qDebug() << "StatusKeycardQt::========================================";
+    qDebug() << "StatusKeycardQt::SessionManager: reader availability changed -"
+             << (available ? "available" : "removed");
 
     if (!m_started) {
         return;
@@ -310,20 +310,22 @@ void SessionManager::onReaderAvailabilityChanged(bool available)
 
 void SessionManager::onChannelError(const QString& errorMsg)
 {
-    qDebug() << "StatusKeycardQt::========================================";
-    qDebug() << "StatusKeycardQt::SessionManager: CHANNEL ERROR:" << errorMsg;
-    qDebug() << "StatusKeycardQt::========================================";
-
     if (!m_started) {
         return;
     }
 
+    if (m_state != SessionState::ConnectionError || m_lastError != errorMsg) {
+        qWarning() << "StatusKeycardQt::SessionManager: channel error:" << errorMsg;
+    }
     setState(SessionState::ConnectionError);
     setError(errorMsg);
 }
 
 void SessionManager::setError(const QString& error)
 {
+    if (error == m_lastError) {
+        return;
+    }
     qDebug() << "StatusKeycardQt::SessionManager::setError() - Error:" << error;
     m_lastError = error;
 }
