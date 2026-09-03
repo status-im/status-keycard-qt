@@ -15,8 +15,8 @@ import im.status.keycardqt.sim.ExposedRuntime;
 
 /**
  * Card recipe for Status Keycard applet <b>3.2</b> (status-keycard {@code 72e9574}, {@code
- * SecureChannel} v1 / classic password pairing) — the generation that matches keycard-qt {@code
- * df00b931} (which sends {@code INS_PAIR 0x12}).
+ * SecureChannel} v1 / classic password pairing) — the generation introduced in the keycard-qt
+ * commit {@code df00b931} (which sends {@code INS_PAIR 0x12}).
  *
  * <p>{@code newCard()} is <b>install-only</b>: a freshly installed applet is already in the
  * post-FactoryReset / blank state (no PIN/PUK, no pairing, no key) — the app's "empty keycard". 3.2

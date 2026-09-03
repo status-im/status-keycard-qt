@@ -71,7 +71,7 @@ else()
     FetchContent_Declare(
       keycard-qt
       GIT_REPOSITORY https://github.com/status-im/keycard-qt
-      GIT_TAG 91860914e9adcad7aa4d40cc5326ecc264d2333a
+      GIT_TAG b90345b81beb173f08208531dc304d544b5312da
     )
 endif()
 

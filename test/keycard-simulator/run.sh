@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
 # Runs the simulator server for a given applet version.
-# Usage: ./run.sh [port] [version]      (version defaults to 3.2 — the one keycard-qt commit #df00b931)
+# Usage: ./run.sh [port] [version]      (version defaults to 3.2 — introduced in the keycard-qt commit #df00b931)
 set -euo pipefail
 HERE="$(cd "$(dirname "$0")" && pwd)"
 PORT="${1:-9025}"
