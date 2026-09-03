@@ -13,10 +13,10 @@ only to *regenerate* the vendored `libs/`.
 
 | version | secure channel | matches |
 |---------|----------------|---------|
-| **3.2** (default) | `SecureChannel` v1, password `PAIR` (`INS 0x12`) | keycard-qt `df00b931` (what the lib pins) |
+| **3.2** (default) | `SecureChannel` v1, password `PAIR` (`INS 0x12`) | introduced in the keycard-qt commit `df00b931` |
 | 4.0 | `SecureChannelV2` (cert-based, no `PAIR`) | a future keycard-qt with SCv2 support |
 
-keycard-qt `df00b931` sends `INS_PAIR 0x12`, which 4.0 removed — so **3.2 is the default and the only
+keycard-qt (introduced in commit `df00b931`) sends `INS_PAIR 0x12`, which 4.0 removed — so **3.2 is the default and the only
 one wired to the app**. 4.0 is a ready scaffold (runs standalone, not driveable by the app yet).
 
 ## Layout

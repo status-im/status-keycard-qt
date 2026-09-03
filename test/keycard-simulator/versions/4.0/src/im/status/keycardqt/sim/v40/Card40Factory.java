@@ -29,7 +29,7 @@ import java.security.Security;
  * {@code 6985}) until the IdentApplet holds a CA-signed identity certificate (factory
  * personalization), so {@code newCard()} installs the applets and stores one using a test CA.
  *
- * <p><b>Not wired to the app yet:</b> keycard-qt {@code df00b931} speaks classic password pairing
+ * <p><b>Not wired to the app yet:</b> keycard-qt (introduced in commit {@code df00b931}) speaks classic password pairing
  * ({@code INS_PAIR 0x12}), which SecureChannelV2 dropped — so this version is kept as a ready scaffold
  * and only becomes drivable once keycard-qt gains SecureChannelV2 support (the future "Use tag 4.0"
  * switch). The card is still blank (no key) — only the factory identity cert is provisioned.
