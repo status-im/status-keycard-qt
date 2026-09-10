@@ -17,7 +17,7 @@ on:
       qt_version:
         description: 'Qt version (dependent on docker image)'
         required: false
-        default: '6.9.2'
+        default: '6.11.0'
         type: string
 
 jobs:
@@ -26,10 +26,11 @@ jobs:
     runs-on: ubuntu-latest
     name: Run Tests
     container:
-      image: harbor.status.im/status-im/status-desktop-build:1.0.5-qt6.9.2-android
-      # Run as root to allow installing packages
+      image: harbor.status.im/status-im/status-desktop-build:20260901-qt6.11.0
+      # Image USER is jenkins; apt-get needs root.
+      options: --user root
     env:
-      QT_VERSION: ${{ inputs.qt_version || '6.9.2' }}
+      QT_VERSION: ${{ inputs.qt_version || '6.11.0' }}
       QT_HOST: gcc_64
       DEBIAN_FRONTEND: noninteractive
 
@@ -159,6 +160,74 @@ jobs:
             cat build/Testing/Temporary/LastTest.log
           fi
 
+  integration:
+    runs-on: ubuntu-latest
+    name: Integration Tests (jcardsim)
+    container:
+      image: harbor.status.im/status-im/status-desktop-build:20260901-qt6.11.0
+      # Image USER is jenkins; apt-get needs root.
+      options: --user root
+    env:
+      QT_VERSION: ${{ inputs.qt_version || '6.11.0' }}
+      QT_HOST: gcc_64
+      DEBIAN_FRONTEND: noninteractive
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Setup environment
+        shell: bash
+        run: |
+          set -e
+          QT_PATH="/opt/qt/${{ env.QT_VERSION }}/gcc_64"
+          echo "QT_PATH=$QT_PATH" >> $GITHUB_ENV
+          echo "CMAKE_PREFIX_PATH=$QT_PATH" >> $GITHUB_ENV
+          echo "Qt6_DIR=$QT_PATH/lib/cmake/Qt6" >> $GITHUB_ENV
+          echo "$QT_PATH/bin" >> $GITHUB_PATH
+
+      - name: Install dependencies
+        run: |
+          set -e
+          apt-get update -qq
+          apt-get install -y libpcsclite-dev libssl-dev pkg-config default-jdk-headless
+
+      - name: Build keycard simulator
+        run: |
+          set -e
+          cd test/keycard-simulator
+          ./build.sh
+
+      - name: Configure and Build
+        run: |
+          set -e
+          mkdir -p build-integration
+          cd build-integration
+          cmake .. \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_PREFIX_PATH="${{ env.QT_PATH }}" \
+            -DQt6_DIR="${{ env.Qt6_DIR }}" \
+            -DBUILD_TESTING=ON \
+            -DUSE_SIMULATED_KEYCARD=ON \
+            -DBUILD_INTEGRATION_TESTS=ON
+          cmake --build . -j$(nproc)
+
+      - name: Run integration tests
+        run: |
+          set -e
+          cd build-integration
+          ctest -L integration --output-on-failure
+
+      - name: Test Summary
+        if: always()
+        run: |
+          if [ -f build-integration/Testing/Temporary/LastTest.log ]; then
+            echo "=== Integration Test Results ==="
+            cat build-integration/Testing/Temporary/LastTest.log
+          fi
+
   # Android build verification (runs on main/master or manually)
   android-build:
     runs-on: ubuntu-latest
@@ -166,10 +235,10 @@ jobs:
     # Only run on main/master branches or manual dispatch to save CI time
     if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master' || github.event_name == 'workflow_dispatch'
     container:
-      image: harbor.status.im/status-im/status-desktop-build:1.0.5-qt6.9.2-android
+      image: harbor.status.im/status-im/status-desktop-build:20260829-qt6.11.0-android
       options: --user jenkins
     env:
-      QT_VERSION: ${{ inputs.qt_version || '6.9.2' }}
+      QT_VERSION: ${{ inputs.qt_version || '6.11.0' }}
       ANDROID_ABI: arm64-v8a
       DEBIAN_FRONTEND: noninteractive
 
