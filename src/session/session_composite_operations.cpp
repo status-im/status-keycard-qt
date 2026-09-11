@@ -48,6 +48,7 @@ SessionManager::RecoverKeys SessionManager::login(const QString& keyUid, const Q
     const QString& xPubPath, bool logEnabled, const QString& logFilePath, bool extendedResponse,
     const QString& pairingPassword)
 {
+    CompositeOperationScope inFlight(*this);
     qDebug() << "StatusKeycardQt::SessionManager::login() xPubPath:" << xPubPath;
 
     // Stop any existing session to release the PCSC card handle
@@ -87,8 +88,11 @@ SessionManager::RecoverKeys SessionManager::login(const QString& keyUid, const Q
         cancelled = m_compositeMethodCallCancelled;
     }
 
-    if (cancelled) {
-        setError("Login cancelled");
+    if (cancelled || m_cardRemovedDuringComposite.load()) {
+        if (m_lastError.isEmpty()) {
+            setError(m_cardRemovedDuringComposite.load() ? QStringLiteral("Card removed")
+                                                        : QStringLiteral("Login cancelled"));
+        }
         return RecoverKeys();
     }
 
@@ -176,6 +180,7 @@ SessionManager::RecoverKeys SessionManager::recover(const QString& pin, const QS
                                 bool logEnabled, const QString& logFilePath,
                                 const QString& keycardUid)
 {
+    CompositeOperationScope inFlight(*this);
     qDebug() << "StatusKeycardQt::SessionManager::recover()";
 
     // Stop any existing session to release the PCSC card handle
@@ -239,6 +244,7 @@ SessionManager::RecoverKeys SessionManager::load(const QString& pin, const QStri
                                const QString& mnemonic, const QString& metadataName, const QStringList& metadataPaths,
                                bool logEnabled, const QString& logFilePath)
 {
+    CompositeOperationScope inFlight(*this);
     qDebug() << "StatusKeycardQt::SessionManager::load()";
 
     // Stop any existing session to release the PCSC card handle
@@ -302,6 +308,7 @@ SessionManager::ExportExtendedPublicKeyResult SessionManager::exportExtendedPubl
     const QString& path, bool exportMasterAddress, const QString& storageFilePath, bool logEnabled,
     const QString& logFilePath, const QString& pairingPassword)
 {
+    CompositeOperationScope inFlight(*this);
     Q_UNUSED(storageFilePath);
     qDebug() << "StatusKeycardQt::SessionManager::exportExtendedPublicKey() path:" << path;
 
@@ -385,6 +392,7 @@ SessionManager::ExportPublicKeyResult SessionManager::exportPublicKey(const QStr
     const QStringList& paths, bool exportPrivate, bool exportMasterAddress, const QString& storageFilePath,
     bool logEnabled, const QString& logFilePath, const QString& pairingPassword)
 {
+    CompositeOperationScope inFlight(*this);
     Q_UNUSED(storageFilePath);
     qDebug() << "StatusKeycardQt::SessionManager::exportPublicKey() paths:" << paths;
 
@@ -453,6 +461,7 @@ bool SessionManager::changeKeycardPIN(const QString& keyUid, const QString& pin,
     const QString& storageFilePath, bool logEnabled, const QString& logFilePath,
     const QString& keycardUid, const QString& pairingPassword)
 {
+    CompositeOperationScope inFlight(*this);
     Q_UNUSED(storageFilePath);
     qDebug() << "StatusKeycardQt::SessionManager::changeKeycardPIN()";
 
@@ -524,6 +533,7 @@ bool SessionManager::changeKeycardPUK(const QString& keyUid, const QString& pin,
     const QString& storageFilePath, bool logEnabled, const QString& logFilePath,
     const QString& keycardUid, const QString& pairingPassword)
 {
+    CompositeOperationScope inFlight(*this);
     Q_UNUSED(storageFilePath);
     qDebug() << "StatusKeycardQt::SessionManager::changeKeycardPUK()";
 
@@ -595,6 +605,7 @@ bool SessionManager::unblockUsingPUK(const QString& keyUid, const QString& puk, 
     const QString& storageFilePath, bool logEnabled, const QString& logFilePath,
     const QString& keycardUid, const QString& pairingPassword)
 {
+    CompositeOperationScope inFlight(*this);
     Q_UNUSED(storageFilePath);
     qDebug() << "StatusKeycardQt::SessionManager::unblockUsingPUK()";
 
@@ -661,6 +672,7 @@ bool SessionManager::unblockUsingPUK(const QString& keyUid, const QString& puk, 
 SessionManager::Metadata SessionManager::getKeycardMetadata(const QString& pin, const QString& storageFilePath,
     bool logEnabled, const QString& logFilePath, const QString& pairingPassword)
 {
+    CompositeOperationScope inFlight(*this);
     Q_UNUSED(storageFilePath);
     qDebug() << "StatusKeycardQt::SessionManager::getKeycardMetadata()";
 
@@ -741,6 +753,7 @@ bool SessionManager::storeKeycardMetadata(const QString& pin, const QString& nam
     const QString& storageFilePath, bool logEnabled, const QString& logFilePath,
     const QString& pairingPassword)
 {
+    CompositeOperationScope inFlight(*this);
     Q_UNUSED(storageFilePath);
     qDebug() << "StatusKeycardQt::SessionManager::storeKeycardMetadata()";
 
@@ -799,6 +812,7 @@ SessionManager::SignResult SessionManager::sign(const QString& keyUid, const QSt
     const QString& path, const QString& storageFilePath, bool logEnabled, const QString& logFilePath,
     const QString& pairingPassword)
 {
+    CompositeOperationScope inFlight(*this);
     Q_UNUSED(storageFilePath);
     qDebug() << "StatusKeycardQt::SessionManager::sign()";
 
@@ -868,7 +882,7 @@ SessionManager::SignResult SessionManager::sign(const QString& keyUid, const QSt
     }
 
     auto cmd = std::make_unique<Keycard::SignCommand>(hashBytes, path, false);
-    Keycard::CommandResult cmdResult = m_commMgr->executeCommandSync(std::move(cmd));
+    Keycard::CommandResult cmdResult = executeCommand(std::move(cmd));
 
     if (!cmdResult.success) {
         setError(QString("Sign failed: %1").arg(cmdResult.error));
@@ -926,6 +940,7 @@ bool SessionManager::factoryResetKeycard(const QString& storageFilePath,
     bool logEnabled, const QString& logFilePath, const QString& keycardUid,
     const QString& pairingPassword)
 {
+    CompositeOperationScope inFlight(*this);
     Q_UNUSED(storageFilePath);
     qDebug() << "StatusKeycardQt::SessionManager::factoryResetKeycard()";
 

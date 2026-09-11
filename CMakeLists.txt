@@ -12,6 +12,7 @@ set(CMAKE_AUTOUIC ON)
 option(BUILD_TESTING "Build unit tests" ON)
 option(BUILD_EXAMPLES "Build example applications" OFF)
 option(USE_SIMULATED_KEYCARD "Build with the simulated keycard backend for tests" OFF)
+option(BUILD_INTEGRATION_TESTS "Build jcardsim integration tests (requires USE_SIMULATED_KEYCARD)" OFF)
 set(STATUS_KEYCARD_BUILD_TESTING ${BUILD_TESTING})  # Save status-keycard-qt test preference
 set(STATUS_KEYCARD_BUILD_EXAMPLES ${BUILD_EXAMPLES})  # Save status-keycard-qt examples preference
 set(STATUS_KEYCARD_BUILD_SHARED_LIBS ${BUILD_SHARED_LIBS})  # Save status-keycard-qt library type preference
@@ -71,7 +72,7 @@ else()
     FetchContent_Declare(
       keycard-qt
       GIT_REPOSITORY https://github.com/status-im/keycard-qt
-      GIT_TAG b90345b81beb173f08208531dc304d544b5312da
+      GIT_TAG 17189b659a38ec74d833f446f6806f6e821d26dd
     )
 endif()
 
@@ -316,6 +317,8 @@ message(STATUS "Version: ${PROJECT_VERSION}")
 message(STATUS "Build type: ${CMAKE_BUILD_TYPE}")
 message(STATUS "Build testing: ${BUILD_TESTING}")
 message(STATUS "Build examples: ${BUILD_EXAMPLES}")
+message(STATUS "Simulated keycard: ${USE_SIMULATED_KEYCARD}")
+message(STATUS "Build integration tests: ${BUILD_INTEGRATION_TESTS}")
 if(BUILD_SHARED_LIBS)
     message(STATUS "Library type: SHARED")
     message(STATUS "keycard-qt bundling: N/A (shared library)")
