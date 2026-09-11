@@ -38,6 +38,12 @@ add_keycard_test(test_signal_manager)
 add_keycard_test(test_pairing_password_holder)
 add_keycard_test(test_bip32_xpub_helpers)
 
+if(USE_SIMULATED_KEYCARD AND BUILD_INTEGRATION_TESTS)
+    add_subdirectory(integration)
+elseif(BUILD_INTEGRATION_TESTS)
+    message(WARNING "BUILD_INTEGRATION_TESTS is ON but USE_SIMULATED_KEYCARD is OFF; integration tests will not be built")
+endif()
+
 # Coverage target (optional, requires gcov/lcov)
 if(CMAKE_BUILD_TYPE MATCHES "Debug")
     option(ENABLE_COVERAGE "Enable code coverage" OFF)

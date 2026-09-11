@@ -7,6 +7,7 @@
 #include <QObject>
 #include <memory>
 #include <queue>
+#include <functional>
 
 namespace StatusKeycardTest {
 
@@ -98,6 +99,21 @@ public:
     int commandExecutionCount() const { return m_commandExecutionCount; }
     
     /**
+     * @brief If set, startDetection() immediately emits cardInitialized for this UID.
+     *
+     * Lets same-thread composite RPCs (login) skip the wait-for-card condition.
+     */
+    void setAutoDetectUid(const QString& uid) { m_autoDetectUid = uid; }
+
+    /**
+     * @brief Called after each executeCommandSync, before the result is returned.
+     */
+    void setAfterCommandHook(std::function<void(const QString& commandName)> hook)
+    {
+        m_afterCommandHook = std::move(hook);
+    }
+
+    /**
      * @brief Reset statistics
      */
     void resetStatistics();
@@ -141,6 +157,8 @@ private:
     // Statistics
     QString m_lastCommandName;
     int m_commandExecutionCount;
+    QString m_autoDetectUid;
+    std::function<void(const QString&)> m_afterCommandHook;
 };
 
 } // namespace StatusKeycardTest
