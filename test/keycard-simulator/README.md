@@ -57,14 +57,20 @@ pairing storage (keyed by instance UID).
 ./run.sh 9025            # applet 3.2 (default) on TCP 9025
 ./run.sh 9025 4.0        # applet 4.0 (standalone only)
 ```
-`run.sh` frees the port from a leftover simulator first, and passes `-noverify` (jcardsim's
-`javacard.*` classes have no stackmap frames).
+
+## C++ integration tests
+
+See the [root README](../../README.md#integration-tests-jcardsim) for cmake/ctest
+commands. Tests spawn `run.sh` automatically; a manual `./run.sh` is only needed
+for debugging. `run.sh` frees the port from a leftover simulator first, and
+passes `-noverify` (jcardsim's `javacard.*` classes have no stackmap frames).
 
 ## Protocol (text, one request/response per line)
 
 ```
 CREATE <id>            -> OK <atrHex>   create if absent (no-op if present)
 RESET  <id>            -> OK            recreate fresh / blank
+POWER  <id>            -> OK            power-cycle volatile state (PIN session) without wiping EEPROM
 ATR    <id>            -> OK <atrHex>
 APDU   <id> <apduHex>  -> OK <respHex>
 PING                   -> OK

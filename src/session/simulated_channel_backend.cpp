@@ -173,12 +173,19 @@ bool SimulatedChannelBackend::insertCard(const QString& cardId) {
 }
 
 void SimulatedChannelBackend::removeCard() {
-    m_cardPresent = false;
-    m_cardAnnounced = false;
     {
         QMutexLocker lock(&m_mutex);
-        m_activeCard.clear();
+        if (!m_activeCard.isEmpty()) {
+            try {
+                commandLocked(QStringLiteral("POWER ") + m_activeCard);
+            } catch (const std::exception& e) {
+                qWarning() << "SimulatedChannelBackend::removeCard POWER failed:" << e.what();
+            }
+            m_activeCard.clear();
+        }
     }
+    m_cardPresent = false;
+    m_cardAnnounced = false;
     emit cardRemoved();
     qDebug() << "SimulatedChannelBackend: removed card";
 }

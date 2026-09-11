@@ -218,7 +218,7 @@ jobs:
         run: |
           set -e
           cd build-integration
-          ctest -L integration --output-on-failure
+          ctest -L integration --no-tests=error --output-on-failure
 
       - name: Test Summary
         if: always()
