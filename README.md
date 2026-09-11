@@ -185,6 +185,25 @@ make
 - CMake 3.16+
 - C++20 compiler
 
+### Integration tests (jcardsim)
+
+Integration tests exercise the public C API against a real Keycard applet in the
+jcardsim-backed simulator (`test/keycard-simulator/`). Requires **JDK ≥ 11** (`javac`).
+
+```bash
+cd test/keycard-simulator && ./build.sh && cd ../..
+
+mkdir -p build && cd build
+cmake .. \
+  -DUSE_SIMULATED_KEYCARD=ON \
+  -DBUILD_INTEGRATION_TESTS=ON \
+  -DKEYCARD_QT_SOURCE_DIR=/path/to/keycard-qt   # optional local dep
+cmake --build . -j$(sysctl -n hw.ncpu 2>/dev/null || nproc)
+ctest -L integration --output-on-failure
+```
+
+Run mock unit tests only (no JVM): configure without `USE_SIMULATED_KEYCARD`.
+
 ## Usage Example
 
 See [`examples/simple_usage.cpp`](examples/simple_usage.cpp) for a complete,
