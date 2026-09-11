@@ -122,6 +122,9 @@ bool MockCommunicationManager::startDetection()
 {
     qDebug() << "StatusKeycardQt::[MockCommunicationManager] startDetection() called";
     m_detectionStarted = true;
+    if (!m_autoDetectUid.isEmpty()) {
+        simulateCardDetected(m_autoDetectUid);
+    }
     return true;
 }
 
@@ -167,6 +170,10 @@ Keycard::CommandResult MockCommunicationManager::executeCommandSync(
         // Return success with no data by default
         result = Keycard::CommandResult::fromSuccess();
         qDebug() << "StatusKeycardQt::[MockCommunicationManager] Returning generic success";
+    }
+
+    if (m_afterCommandHook) {
+        m_afterCommandHook(m_lastCommandName);
     }
 
     return result;

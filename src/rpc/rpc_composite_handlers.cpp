@@ -1,5 +1,4 @@
 #include "rpc_service.h"
-#include "../signal_manager.h"
 #include "../utils/constants.h"
 #include "../utils/common.h"
 #include "../session/session_manager.h"
@@ -37,7 +36,7 @@ QJsonObject RpcService::handleLogin(quint64 id, const QJsonObject& params) {
 
     SessionManager::RecoverKeys keys = m_sessionManager->login(keyUidWithout0x, pin, xPubPath, logEnabled, logFilePath,
         extendedResponse, pairingPassword);
-    SignalManager::instance()->emitStatusChanged(m_sessionManager->getStatus());
+    emitCompositeStatusChanged();
     if (!m_sessionManager->lastError().isEmpty()) {
         return createErrorResponse(id, -32000, m_sessionManager->lastError());
     }
@@ -88,7 +87,7 @@ QJsonObject RpcService::handleRecover(quint64 id, const QJsonObject& params) {
 
     SessionManager::RecoverKeys keys = m_sessionManager->recover(pin, puk, pairingPassword, mnemonic,
         metadataName, metadataPaths, logEnabled, logFilePath, keycardUid);
-    SignalManager::instance()->emitStatusChanged(m_sessionManager->getStatus());
+    emitCompositeStatusChanged();
     if (!m_sessionManager->lastError().isEmpty()) {
         return createErrorResponse(id, -32000, m_sessionManager->lastError());
     }
@@ -137,7 +136,7 @@ QJsonObject RpcService::handleLoad(quint64 id, const QJsonObject& params) {
 
     SessionManager::RecoverKeys keys = m_sessionManager->load(pin, puk, pairingPassword, mnemonic,
         metadataName, metadataPaths, logEnabled, logFilePath);
-    SignalManager::instance()->emitStatusChanged(m_sessionManager->getStatus());
+    emitCompositeStatusChanged();
     if (!m_sessionManager->lastError().isEmpty()) {
         return createErrorResponse(id, -32000, m_sessionManager->lastError());
     }
@@ -178,7 +177,7 @@ QJsonObject RpcService::handleExportExtendedPublicKey(quint64 id, const QJsonObj
 
     SessionManager::ExportExtendedPublicKeyResult result = m_sessionManager->exportExtendedPublicKey(keyUidWithout0x,
         pin, path, exportMasterAddress, storagePath, logEnabled, logFilePath, pairingPassword);
-    SignalManager::instance()->emitStatusChanged(m_sessionManager->getStatus());
+    emitCompositeStatusChanged();
     if (!m_sessionManager->lastError().isEmpty()) {
         return createErrorResponse(id, -32000, m_sessionManager->lastError());
     }
@@ -248,7 +247,7 @@ QJsonObject RpcService::handleExportPublicKey(quint64 id, const QJsonObject& par
 
     SessionManager::ExportPublicKeyResult result = m_sessionManager->exportPublicKey(keyUidWithout0x, pin, paths,
         exportPrivate, exportMasterAddress, storagePath, logEnabled, logFilePath, pairingPassword);
-    SignalManager::instance()->emitStatusChanged(m_sessionManager->getStatus());
+    emitCompositeStatusChanged();
     if (!m_sessionManager->lastError().isEmpty()) {
         return createErrorResponse(id, -32000, m_sessionManager->lastError());
     }
@@ -327,7 +326,7 @@ QJsonObject RpcService::handleChangeKeycardPIN(quint64 id, const QJsonObject& pa
 
     bool success = m_sessionManager->changeKeycardPIN(keyUidWithout0x, pin, newPin, storagePath, logEnabled, logFilePath,
         keycardUid, pairingPassword);
-    SignalManager::instance()->emitStatusChanged(m_sessionManager->getStatus());
+    emitCompositeStatusChanged();
     if (!success) {
         return createErrorResponse(id, -32000, m_sessionManager->lastError());
     }
@@ -369,7 +368,7 @@ QJsonObject RpcService::handleChangeKeycardPUK(quint64 id, const QJsonObject& pa
 
     bool success = m_sessionManager->changeKeycardPUK(keyUidWithout0x, pin, newPuk, storagePath, logEnabled, logFilePath,
         keycardUid, pairingPassword);
-    SignalManager::instance()->emitStatusChanged(m_sessionManager->getStatus());
+    emitCompositeStatusChanged();
     if (!success) {
         return createErrorResponse(id, -32000, m_sessionManager->lastError());
     }
@@ -411,7 +410,7 @@ QJsonObject RpcService::handleUnblockUsingPUK(quint64 id, const QJsonObject& par
 
     bool success = m_sessionManager->unblockUsingPUK(keyUidWithout0x, puk, newPin, storagePath, logEnabled, logFilePath,
         keycardUid, pairingPassword);
-    SignalManager::instance()->emitStatusChanged(m_sessionManager->getStatus());
+    emitCompositeStatusChanged();
     if (!success) {
         return createErrorResponse(id, -32000, m_sessionManager->lastError());
     }
@@ -441,7 +440,7 @@ QJsonObject RpcService::handleGetKeycardMetadata(quint64 id, const QJsonObject& 
 
     SessionManager::Metadata metadata = m_sessionManager->getKeycardMetadata(pin, storagePath, logEnabled, logFilePath,
         pairingPassword);
-    SignalManager::instance()->emitStatusChanged(m_sessionManager->getStatus());
+    emitCompositeStatusChanged();
     if (!m_sessionManager->lastError().isEmpty()) {
         return createErrorResponse(id, -32000, m_sessionManager->lastError());
     }
@@ -491,7 +490,7 @@ QJsonObject RpcService::handleStoreKeycardMetadata(quint64 id, const QJsonObject
 
     bool success = m_sessionManager->storeKeycardMetadata(pin, name, paths, storagePath, logEnabled, logFilePath,
         pairingPassword);
-    SignalManager::instance()->emitStatusChanged(m_sessionManager->getStatus());
+    emitCompositeStatusChanged();
     if (!success) {
         return createErrorResponse(id, -32000, m_sessionManager->lastError());
     }
@@ -538,7 +537,7 @@ QJsonObject RpcService::handleSign(quint64 id, const QJsonObject& params) {
 
     SessionManager::SignResult result = m_sessionManager->sign(keyUidWithout0x, pin, txHashClean, path, storagePath,
         logEnabled, logFilePath, pairingPassword);
-    SignalManager::instance()->emitStatusChanged(m_sessionManager->getStatus());
+    emitCompositeStatusChanged();
     if (!m_sessionManager->lastError().isEmpty()) {
         return createErrorResponse(id, -32000, m_sessionManager->lastError());
     }
@@ -569,7 +568,7 @@ QJsonObject RpcService::handleFactoryResetKeycard(quint64 id, const QJsonObject&
 
     bool success = m_sessionManager->factoryResetKeycard(storagePath, logEnabled, logFilePath, keycardUid,
         pairingPassword);
-    SignalManager::instance()->emitStatusChanged(m_sessionManager->getStatus());
+    emitCompositeStatusChanged();
     if (!success) {
         return createErrorResponse(id, -32000, m_sessionManager->lastError());
     }

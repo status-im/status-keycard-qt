@@ -26,7 +26,9 @@ import java.util.concurrent.ConcurrentHashMap;
  *
  * Text line protocol (UTF-8, one request and one response per line, space separated):
  *   CREATE &lt;cardId&gt;             -&gt; OK &lt;atrHex&gt;       create card if absent (no-op if present)
+ *   CREATE_EMPTY &lt;cardId&gt;       -&gt; OK &lt;atrHex&gt;       card with no Keycard applet (SELECT fails)
  *   RESET  &lt;cardId&gt;             -&gt; OK                 recreate card fresh / blank
+ *   POWER  &lt;cardId&gt;             -&gt; OK                 power-cycle volatile applet state (PIN session)
  *   ATR    &lt;cardId&gt;             -&gt; OK &lt;atrHex&gt;
  *   APDU   &lt;cardId&gt; &lt;apduHex&gt;    -&gt; OK &lt;responseHex&gt;
  *   PING                          -&gt; OK
@@ -92,9 +94,24 @@ public final class SimProtocolServer {
                 CardSimulator sim = cards.computeIfAbsent(id, k -> factory.newCard());
                 return "OK " + bytesToHex(sim.getATR());
             }
+            case "CREATE_EMPTY": {
+                String id = arg(parts, 1);
+                CardSimulator sim = new CardSimulator();
+                cards.put(id, sim);
+                return "OK " + bytesToHex(sim.getATR());
+            }
             case "RESET": {
                 String id = arg(parts, 1);
                 cards.put(id, factory.newCard());
+                return "OK";
+            }
+            case "POWER": {
+                String id = arg(parts, 1);
+                CardSimulator sim = require(id);
+                synchronized (sim) {
+                    // Full power cycle clears volatile PIN session state while keeping EEPROM.
+                    sim.reset();
+                }
                 return "OK";
             }
             case "ATR": {
