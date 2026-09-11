@@ -8,6 +8,7 @@
 #include <QTimer>
 #include <QMutex>
 #include <QWaitCondition>
+#include <atomic>
 #include <memory>
 
 namespace StatusKeycard {
@@ -236,11 +237,13 @@ public slots:
 
 private:
     void setState(SessionState newState);
+    void publishCancelled();
     void setError(const QString& error);
 
     bool ensureKeycardCommunication();
     bool ensureStarted();
     bool ensureAuthorized();
+    bool failIfCardRemoved();
 
     bool validateCompositeKeyUid(const QString& keyUid, const ApplicationInfoV2* keycardInfo);
     bool validateCompositeKeycardUid(const QString& keycardUid, const ApplicationInfoV2* keycardInfo);
@@ -248,6 +251,8 @@ private:
     RecoverKeys initializeAndLoad(const QString& pin, const QString& puk, const QString& pairingPassword,
                                   const QString& mnemonic, const QString& metadataName,
                                   const QStringList& metadataPaths, const bool cardContainsKeyOnly);
+
+    Keycard::CommandResult executeCommand(std::unique_ptr<Keycard::CardCommand> cmd);
 
     // Fetch fresh app status from card and publish status-changed signal
     void updateAndPublishStatus(bool authorized);
@@ -287,6 +292,18 @@ private:
     QWaitCondition m_cardReadyCondition;
     QMutex m_cardReadyMutex;
     bool m_compositeMethodCallCancelled = false;
+
+    class CompositeOperationScope {
+        SessionManager& m_sm;
+    public:
+        explicit CompositeOperationScope(SessionManager& sm) : m_sm(sm) {
+            m_sm.m_cardRemovedDuringComposite.store(false);
+            m_sm.m_compositeOpInFlight.fetch_add(1);
+        }
+        ~CompositeOperationScope() { m_sm.m_compositeOpInFlight.fetch_sub(1); }
+    };
+    std::atomic<int> m_compositeOpInFlight{0};
+    std::atomic<bool> m_cardRemovedDuringComposite{false};
 };
 
 } // namespace StatusKeycard

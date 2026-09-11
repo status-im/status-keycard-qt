@@ -76,6 +76,8 @@ private:
      */
     QJsonObject recoverKeysToJson(const SessionManager::RecoverKeys& keys);
 
+    void emitCompositeStatusChanged() const;
+
     // RPC method handlers
     QJsonObject handleStop(quint64 id, const QJsonObject& params);
     QJsonObject handleCancelCurrentOperation(quint64 id, const QJsonObject& params);

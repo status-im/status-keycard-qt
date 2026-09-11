@@ -327,6 +327,59 @@ private slots:
         QCOMPARE(m_manager->currentState(), SessionState::Authorized);
     }
 
+    void testCardRemovalDuringCompositeEmitsCancelledOnce()
+    {
+        m_mockComm->setAutoDetectUid(QStringLiteral("test-uid"));
+
+        QVariantMap statusData;
+        statusData.insert(QStringLiteral("pinRetryCount"), 3);
+        statusData.insert(QStringLiteral("pukRetryCount"), 5);
+        m_mockComm->setDefaultCommandResult(Keycard::CommandResult::fromSuccess(statusData));
+
+        m_stateChanges.clear();
+        bool removalSimulated = false;
+        m_mockComm->setAfterCommandHook([this, &removalSimulated](const QString& name) {
+            if (removalSimulated || name != QLatin1String("GET_STATUS")) {
+                return;
+            }
+            removalSimulated = true;
+            m_mockComm->simulateCardRemoved();
+            m_mockComm->simulateCardRemoved();
+        });
+
+        m_manager->login(QString(), QStringLiteral("123456"));
+
+        int cancelledTransitions = 0;
+        for (const auto& change : m_stateChanges) {
+            if (change.first == SessionState::Cancelled) {
+                cancelledTransitions++;
+            }
+        }
+        QCOMPARE(cancelledTransitions, 1);
+    }
+
+    void testLoginKeepsCardRemovedAfterAuthorizeYank()
+    {
+        m_mockComm->setAutoDetectUid(QStringLiteral("test-uid"));
+
+        QVariantMap statusData;
+        statusData.insert(QStringLiteral("pinRetryCount"), 3);
+        statusData.insert(QStringLiteral("pukRetryCount"), 5);
+        m_mockComm->setDefaultCommandResult(Keycard::CommandResult::fromSuccess(statusData));
+
+        m_mockComm->setAfterCommandHook([this](const QString& name) {
+            if (name == QLatin1String("GET_STATUS")) {
+                m_mockComm->simulateCardRemoved();
+            }
+        });
+
+        const SessionManager::RecoverKeys keys = m_manager->login(
+            QString(), QStringLiteral("123456"));
+        Q_UNUSED(keys);
+
+        QCOMPARE(m_manager->lastError(), QStringLiteral("Card removed"));
+    }
+
     void testMultipleCardDetections()
     {
         m_manager->start();

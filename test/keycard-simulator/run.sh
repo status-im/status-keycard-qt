@@ -19,7 +19,9 @@ mainClass="$(sed -n 's/^mainClass=//p' "$PROPS")"
 # session won't be tracked by the app, so it would otherwise fail with "Address already in use").
 # Only kill our OWN leftover simulator; refuse to touch an unrelated process holding the port.
 if command -v lsof >/dev/null 2>&1; then
-    for pid in $(lsof -ti "tcp:$PORT" 2>/dev/null || true); do
+    # Only consider processes that are LISTENing on the port. Client connections from tests
+    # must not block simulator startup.
+    for pid in $(lsof -tiTCP:"$PORT" -sTCP:LISTEN 2>/dev/null || true); do
         if ps -p "$pid" -o command= 2>/dev/null | grep -q 'keycardqt'; then
             echo "Port $PORT held by a previous simulator (pid $pid) — stopping it."
             kill "$pid" 2>/dev/null || true
@@ -31,7 +33,7 @@ if command -v lsof >/dev/null 2>&1; then
     done
     # wait briefly for the OS to release the socket
     tries=0
-    while lsof -ti "tcp:$PORT" >/dev/null 2>&1 && [ "$tries" -lt 20 ]; do
+    while lsof -tiTCP:"$PORT" -sTCP:LISTEN >/dev/null 2>&1 && [ "$tries" -lt 20 ]; do
         sleep 0.2; tries=$((tries + 1))
     done
 fi

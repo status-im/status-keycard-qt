@@ -2,6 +2,8 @@
 #include "../utils/constants.h"
 #include "../utils/common.h"
 #include "../session/session_manager.h"
+#include "../session/session_state.h"
+#include "../signal_manager.h"
 #include "../storage/file_pairing_storage.h"
 #include "keycard-qt/communication_manager.h"
 #include <QJsonArray>
@@ -21,6 +23,14 @@ RpcService::RpcService(QObject* parent)
 }
 
 RpcService::~RpcService() = default;
+
+void RpcService::emitCompositeStatusChanged() const
+{
+    if (m_sessionManager->currentState() == SessionState::Cancelled) {
+        return;
+    }
+    SignalManager::instance()->emitStatusChanged(m_sessionManager->getStatus());
+}
 
 void RpcService::setCommunicationManager(std::shared_ptr<Keycard::ICommunicationManager> commMgr) {
     qDebug() << "StatusKeycardQt::RpcService: Setting CommunicationManager for SessionManager";
