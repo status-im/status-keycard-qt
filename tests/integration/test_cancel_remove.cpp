@@ -4,6 +4,7 @@
 #include <QtTest/QtTest>
 #include <QJsonDocument>
 #include <QJsonObject>
+#include <thread>
 
 using namespace IntegrationTest;
 
@@ -93,6 +94,44 @@ private slots:
                  qPrintable(QStringLiteral("removing the card must fail Login promptly, took %1 ms (%2)")
                                 .arg(elapsed.elapsed())
                                 .arg(error)));
+    }
+
+    void test_removeCardFromReaderThreadReportsCardRemoved()
+    {
+        const QString cardId = freshCardId(QStringLiteral("remove-async"));
+        const QJsonObject load = m_rpc.loadCard(cardId, QString::fromUtf8(kMnemonicA));
+        QVERIFY2(rpcSucceeded(load), qPrintable(rpcErrorMessage(load)));
+
+        const QString keyUid = m_rpc.keyUidFromLastStatus();
+        m_rpc.stop();
+        m_rpc.plugInsertCard(cardId);
+        m_rpc.clearSignals();
+
+        QJsonObject params;
+        params.insert(QStringLiteral("storageFilePath"), m_rpc.storagePath());
+        params.insert(QStringLiteral("pin"), QString::fromUtf8(kDefaultPin));
+        params.insert(QStringLiteral("keyUid"), keyUid);
+
+        // A reader reports removal from its own thread, not from inside the
+        // status-changed callback.
+        std::thread remover;
+        const InterruptedRpcCall result = m_rpc.callRpcAfterStatus(
+            QStringLiteral("keycard.Login"),
+            params,
+            QStringLiteral("ready"),
+            [this, &remover]() {
+                remover = std::thread([this]() { m_rpc.removeCard(); });
+            },
+            5000);
+        if (remover.joinable()) {
+            remover.join();
+        }
+
+        QVERIFY(result.actionTriggered);
+        QVERIFY(!rpcSucceeded(result.response));
+        const QString error = rpcErrorMessage(result.response);
+        QVERIFY2(error.contains(QStringLiteral("Card removed")),
+                 qPrintable(QStringLiteral("expected \"Card removed\", got \"%1\"").arg(error)));
     }
 };
 
