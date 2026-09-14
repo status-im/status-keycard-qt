@@ -173,20 +173,27 @@ bool SimulatedChannelBackend::insertCard(const QString& cardId) {
 }
 
 void SimulatedChannelBackend::removeCard() {
+    QString cardToPower;
     {
         QMutexLocker lock(&m_mutex);
-        if (!m_activeCard.isEmpty()) {
-            try {
-                commandLocked(QStringLiteral("POWER ") + m_activeCard);
-            } catch (const std::exception& e) {
-                qWarning() << "SimulatedChannelBackend::removeCard POWER failed:" << e.what();
-            }
-            m_activeCard.clear();
-        }
+        cardToPower = m_activeCard;
+        m_activeCard.clear();
     }
+
+    // Publish removal before POWER so in-flight Login/APDUs fail promptly.
+    // POWER (sim.reset()) can take seconds on CI; real readers emit loss immediately.
     m_cardPresent = false;
     m_cardAnnounced = false;
     emit cardRemoved();
+
+    if (!cardToPower.isEmpty()) {
+        QMutexLocker lock(&m_mutex);
+        try {
+            commandLocked(QStringLiteral("POWER ") + cardToPower);
+        } catch (const std::exception& e) {
+            qWarning() << "SimulatedChannelBackend::removeCard POWER failed:" << e.what();
+        }
+    }
     qDebug() << "SimulatedChannelBackend: removed card";
 }
 

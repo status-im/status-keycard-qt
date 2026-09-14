@@ -69,12 +69,14 @@ private slots:
         params.insert(QStringLiteral("keyUid"), keyUid);
 
         QElapsedTimer elapsed;
-        elapsed.start();
         const InterruptedRpcCall result = m_rpc.callRpcAfterStatus(
             QStringLiteral("keycard.Login"),
             params,
             QStringLiteral("ready"),
-            [this]() { m_rpc.removeCard(); },
+            [this, &elapsed]() {
+                elapsed.start();
+                m_rpc.removeCard();
+            },
             5000);
 
         QVERIFY(result.actionTriggered);
