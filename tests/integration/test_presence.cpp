@@ -120,6 +120,32 @@ private slots:
         const QJsonObject login = m_rpc.login(QString::fromUtf8(kDefaultPin), keyUid);
         QVERIFY2(rpcSucceeded(login), qPrintable(rpcErrorMessage(login)));
     }
+
+    void test_idleCardRemovalPublishesWaitingForCardOnce()
+    {
+        const QString cardId = freshCardId(QStringLiteral("remove-once"));
+        const QJsonObject load = m_rpc.loadCard(cardId, QString::fromUtf8(kMnemonicA));
+        QVERIFY2(rpcSucceeded(load), qPrintable(rpcErrorMessage(load)));
+        const QString keyUid = m_rpc.keyUidFromLastStatus();
+
+        m_rpc.stop();
+        m_rpc.plugInsertCard(cardId);
+        const QJsonObject login = m_rpc.login(QString::fromUtf8(kDefaultPin), keyUid);
+        QVERIFY2(rpcSucceeded(login), qPrintable(rpcErrorMessage(login)));
+
+        m_rpc.clearSignals();
+        m_rpc.removeCard();
+        QTRY_VERIFY(m_rpc.lastStatusSignal().state == QStringLiteral("waiting-for-card"));
+        QTest::qWait(500);
+
+        int waitingForCard = 0;
+        for (const StatusSignal& signal : m_rpc.statusSignals()) {
+            if (signal.state == QStringLiteral("waiting-for-card")) {
+                ++waitingForCard;
+            }
+        }
+        QCOMPARE(waitingForCard, 1);
+    }
 };
 
 QTEST_MAIN(TestPresence)
