@@ -277,13 +277,33 @@ void SessionManager::onCardRemoved()
 #else
     m_currentCardUID.clear();
 
-    if (m_started) {
-        // If the reader was already marked as unavailable, the reader itself was removed
-        // (onReaderAvailabilityChanged already set the appropriate state).
-        // Only transition to WaitingForCard if the reader is still present.
-        if (m_state != SessionState::WaitingForReader) {
-            setState(SessionState::WaitingForCard);
+    if (!m_started) {
+        return;
+    }
+
+    const SessionState previous = m_state;
+    const bool yankDuringComposite = m_compositeOpInFlight.load() > 0
+        && previous != SessionState::WaitingForCard
+        && previous != SessionState::WaitingForReader;
+    if (yankDuringComposite && m_commMgr) {
+        if (m_cardRemovedDuringComposite.exchange(true)) {
+            return;
         }
+        {
+            QMutexLocker locker(&m_cardReadyMutex);
+            m_compositeMethodCallCancelled = true;
+            m_cardReadyCondition.wakeAll();
+        }
+        // The RPC thread owns m_lastError; failIfCardRemoved() sets it there.
+        m_commMgr->cancelPendingOperations("Card removed");
+        publishCancelled();
+        return;
+    }
+
+    // Removal arrives from both ICommunicationManager and CommandSet; the
+    // reader-gone case is already handled by onReaderAvailabilityChanged.
+    if (previous != SessionState::WaitingForReader && previous != SessionState::WaitingForCard) {
+        setState(SessionState::WaitingForCard);
     }
 #endif
 }
