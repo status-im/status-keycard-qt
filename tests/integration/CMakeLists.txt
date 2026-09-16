@@ -34,6 +34,7 @@ function(add_integration_test TEST_NAME)
     set_tests_properties(${TEST_NAME} PROPERTIES
         LABELS "integration"
         RESOURCE_LOCK "keycard-simulator"
+        TIMEOUT 300
     )
 endfunction()
 
