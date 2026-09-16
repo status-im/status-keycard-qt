@@ -79,9 +79,8 @@ private slots:
         QVERIFY2(slotsAfterLoad >= 0,
                  "SELECT should report remaining pairing slots after Load");
 
-        // Applet 3.2 has 10 persistent slots. Do not POWER/remove between Logins:
-        // SimulatedChannelBackend::removeCard() power-cycles the simulator and can
-        // drop pairing EEPROM, so slots never exhaust.
+        // Applet 3.2 has 10 persistent slots. Each Login with an empty pairing
+        // file takes one; the card stays inserted between attempts.
         QString lastState;
         bool sawNoSlots = false;
         const int attempts = slotsAfterLoad + 2;

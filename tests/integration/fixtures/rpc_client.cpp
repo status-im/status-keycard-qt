@@ -332,8 +332,8 @@ QVector<int> RpcClient::blockPin(const QString& cardId, const QString& keyUid, i
 {
     QVector<int> remainingAttempts;
     for (int i = 0; i < attempts; ++i) {
-        // Do not POWER/remove between wrong-PIN tries: jcardsim reset() can restore
-        // pinRetryCount, and a successful Login (cached PIN) would abort the loop at 1.
+        // Stop/insert without removing the card: a cached PIN from an earlier
+        // successful Login would otherwise abort the loop at 1.
         stop();
         plugInsertCard(cardId);
         clearSignals();
