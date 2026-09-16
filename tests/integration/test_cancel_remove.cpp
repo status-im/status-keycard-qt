@@ -87,9 +87,7 @@ private slots:
                                     QJsonDocument(result.response).toJson(QJsonDocument::Compact)))));
         const QString error = rpcErrorMessage(result.response);
         QVERIFY2(!error.isEmpty(), "card removal must return an RPC error");
-        QVERIFY2(error.contains(QStringLiteral("Card removed"))
-                     || error.contains(QStringLiteral("no simulated card present")),
-                 qPrintable(error));
+        QVERIFY2(error.contains(QStringLiteral("Card removed")), qPrintable(error));
         QVERIFY2(elapsed.elapsed() < 2000,
                  qPrintable(QStringLiteral("removing the card must fail Login promptly, took %1 ms (%2)")
                                 .arg(elapsed.elapsed())
