@@ -299,15 +299,15 @@ void SessionManager::onCardRemoved()
             m_compositeMethodCallCancelled = true;
             m_cardReadyCondition.wakeAll();
         }
+        // The RPC thread owns m_lastError; failIfCardRemoved() sets it there.
         m_commMgr->cancelPendingOperations("Card removed");
-        setError(QStringLiteral("Card removed"));
         setState(SessionState::Cancelled);
         return;
     }
 
-    // If the reader was already marked as unavailable, the reader itself was
-    // removed (onReaderAvailabilityChanged already set the appropriate state).
-    if (previous != SessionState::WaitingForReader) {
+    // Removal arrives from both ICommunicationManager and CommandSet; the
+    // reader-gone case is already handled by onReaderAvailabilityChanged.
+    if (previous != SessionState::WaitingForReader && previous != SessionState::WaitingForCard) {
         setState(SessionState::WaitingForCard);
     }
 #endif
