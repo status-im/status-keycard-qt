@@ -23,7 +23,7 @@ on:
 jobs:
   # Fast tests with desktop Qt (lightweight, runs always)
   test:
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, Linux, X64]
     name: Run Tests
     container:
       image: harbor.status.im/status-im/status-desktop-build:1.0.5-qt6.9.2-android
@@ -161,7 +161,7 @@ jobs:
 
   # Android build verification (runs on main/master or manually)
   android-build:
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, Linux, X64]
     name: Android Build Verification
     # Only run on main/master branches or manual dispatch to save CI time
     if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master' || github.event_name == 'workflow_dispatch'
