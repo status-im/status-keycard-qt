@@ -7,6 +7,7 @@
 #include <keycard-qt/tlv_utils.h>
 #include <keycard-qt/metadata_utils.h>
 #include <keycard-qt/i_communication_manager.h>
+#include <keycard-qt/command_set.h>
 #include <keycard-qt/backends/keycard_channel_backend.h>
 #include <QJsonDocument>
 #include <QJsonObject>
@@ -101,8 +102,13 @@ bool SessionManager::start(bool logEnabled, const QString& logFilePath)
             this, [this]() { setState(SessionState::Cancelled); },
             Qt::AutoConnection);
 
-#if !defined(Q_OS_ANDROID) && !defined(Q_OS_IOS)
     if (auto cmdSet = m_commMgr->commandSet()) {
+        QObject::disconnect(cmdSet.get(), nullptr, this, nullptr);
+        connect(cmdSet.get(), &Keycard::CommandSet::cardLost,
+                this, &SessionManager::onCardRemoved,
+                Qt::AutoConnection);
+
+#if !defined(Q_OS_ANDROID) && !defined(Q_OS_IOS)
         if (auto ch = cmdSet->channel()) {
             connect(ch.get(), &Keycard::KeycardChannel::readerAvailabilityChanged,
                     this, &SessionManager::onReaderAvailabilityChanged,
@@ -113,8 +119,8 @@ bool SessionManager::start(bool logEnabled, const QString& logFilePath)
                     this, &SessionManager::onChannelError,
                     Qt::AutoConnection);
         }
-    }
 #endif
+    }
 
     // Mark as started before startDetection(), because detection may emit
     // readerAvailabilityChanged synchronously and the slot needs m_started == true.
@@ -174,6 +180,7 @@ void SessionManager::stop()
 
         // Also disconnect from the channel's readerAvailabilityChanged signal
         if (auto cmdSet = m_commMgr->commandSet()) {
+            QObject::disconnect(cmdSet.get(), nullptr, this, nullptr);
             if (auto ch = cmdSet->channel()) {
                 QObject::disconnect(ch.get(), nullptr, this, nullptr);
             }
@@ -277,13 +284,33 @@ void SessionManager::onCardRemoved()
 #else
     m_currentCardUID.clear();
 
-    if (m_started) {
-        // If the reader was already marked as unavailable, the reader itself was removed
-        // (onReaderAvailabilityChanged already set the appropriate state).
-        // Only transition to WaitingForCard if the reader is still present.
-        if (m_state != SessionState::WaitingForReader) {
-            setState(SessionState::WaitingForCard);
+    if (!m_started) {
+        return;
+    }
+
+    const SessionState previous = m_state;
+    const bool yankDuringComposite = m_compositeOpInFlight.load() > 0
+        && previous != SessionState::WaitingForCard
+        && previous != SessionState::WaitingForReader;
+    if (yankDuringComposite && m_commMgr) {
+        if (m_cardRemovedDuringComposite.exchange(true)) {
+            return;
         }
+        {
+            QMutexLocker locker(&m_cardReadyMutex);
+            m_compositeMethodCallCancelled = true;
+            m_cardReadyCondition.wakeAll();
+        }
+        // The RPC thread owns m_lastError; failIfCardRemoved() sets it there.
+        m_commMgr->cancelPendingOperations("Card removed");
+        setState(SessionState::Cancelled);
+        return;
+    }
+
+    // Removal arrives from both ICommunicationManager and CommandSet; the
+    // reader-gone case is already handled by onReaderAvailabilityChanged.
+    if (previous != SessionState::WaitingForReader && previous != SessionState::WaitingForCard) {
+        setState(SessionState::WaitingForCard);
     }
 #endif
 }
@@ -328,6 +355,15 @@ void SessionManager::setError(const QString& error)
     m_lastError = error;
 }
 
+Keycard::CommandResult SessionManager::executeCommand(std::unique_ptr<Keycard::CardCommand> cmd)
+{
+    if (m_cardRemovedDuringComposite.load()) {
+        return Keycard::CommandResult::fromError(
+            QStringLiteral("Card removed"), Keycard::CommandResultType::Cancelled);
+    }
+    return m_commMgr->executeCommandSync(std::move(cmd));
+}
+
 bool SessionManager::ensureKeycardCommunication()
 {
     if (!m_commMgr) {
@@ -346,9 +382,18 @@ bool SessionManager::ensureStarted()
     return ensureKeycardCommunication();
 }
 
+bool SessionManager::failIfCardRemoved()
+{
+    if (!m_cardRemovedDuringComposite.load()) {
+        return false;
+    }
+    setError(QStringLiteral("Card removed"));
+    return true;
+}
+
 bool SessionManager::ensureAuthorized()
 {
-    if (!ensureStarted()) {
+    if (!ensureStarted() || failIfCardRemoved()) {
         return false;
     }
     if (m_state != SessionState::Authorized) {
@@ -361,7 +406,7 @@ bool SessionManager::ensureAuthorized()
 void SessionManager::updateAndPublishStatus(bool authorized)
 {
     auto statusCmd = std::make_unique<Keycard::GetStatusCommand>();
-    Keycard::CommandResult statusResult = m_commMgr->executeCommandSync(std::move(statusCmd));
+    Keycard::CommandResult statusResult = executeCommand(std::move(statusCmd));
     if (!statusResult.success && statusResult.reason == Keycard::CommandResultType::Cancelled) {
         setState(SessionState::Cancelled);
         return;
@@ -439,7 +484,7 @@ bool SessionManager::initialize(const QString& pin, const QString& puk, const QS
     }
 
     auto cmd = std::make_unique<Keycard::InitCommand>(pin, puk, pairingPassword);
-    Keycard::CommandResult result = m_commMgr->executeCommandSync(std::move(cmd));
+    Keycard::CommandResult result = executeCommand(std::move(cmd));
 
     if (!result.success && result.reason == Keycard::CommandResultType::Cancelled) {
         setState(SessionState::Cancelled);
@@ -463,24 +508,34 @@ bool SessionManager::authorize(const QString& pin)
 {
     qDebug() << "StatusKeycardQt::SessionManager::authorize() - Thread:" << QThread::currentThread();
 
-    if (!ensureStarted()) {
+    if (!ensureStarted() || failIfCardRemoved()) {
         return false;
     }
 
     if (m_state != SessionState::Ready) {
-        setError("Card not ready (current state: " + currentStateString() + ")");
+        if (!failIfCardRemoved()) {
+            setError("Card not ready (current state: " + currentStateString() + ")");
+        }
         return false;
     }
 
     auto cmd = std::make_unique<Keycard::VerifyPINCommand>(pin);
-    Keycard::CommandResult result = m_commMgr->executeCommandSync(std::move(cmd));
+    Keycard::CommandResult result = executeCommand(std::move(cmd));
     if (!result.success && result.reason == Keycard::CommandResultType::Cancelled) {
         setState(SessionState::Cancelled);
+        failIfCardRemoved();
+        if (m_lastError.isEmpty()) {
+            setError(result.error.isEmpty() ? QStringLiteral("Cancelled") : result.error);
+        }
         return false;
     }
     bool authorized = result.success;
 
     updateAndPublishStatus(authorized);
+
+    if (failIfCardRemoved()) {
+        return false;
+    }
 
     if (!authorized) {
         setError(result.error);
@@ -498,7 +553,7 @@ bool SessionManager::changePIN(const QString& newPIN)
     }
 
     auto cmd = std::make_unique<Keycard::ChangePINCommand>(newPIN);
-    Keycard::CommandResult result = m_commMgr->executeCommandSync(std::move(cmd));
+    Keycard::CommandResult result = executeCommand(std::move(cmd));
 
     if (!result.success && result.reason == Keycard::CommandResultType::Cancelled) {
         setState(SessionState::Cancelled);
@@ -523,7 +578,7 @@ bool SessionManager::changePUK(const QString& newPUK)
     }
 
     auto cmd = std::make_unique<Keycard::ChangePUKCommand>(newPUK);
-    Keycard::CommandResult result = m_commMgr->executeCommandSync(std::move(cmd));
+    Keycard::CommandResult result = executeCommand(std::move(cmd));
 
     if (!result.success && result.reason == Keycard::CommandResultType::Cancelled) {
         setState(SessionState::Cancelled);
@@ -553,7 +608,7 @@ bool SessionManager::unblockPIN(const QString& puk, const QString& newPIN)
     }
 
     auto cmd = std::make_unique<Keycard::UnblockPINCommand>(puk, newPIN);
-    Keycard::CommandResult result = m_commMgr->executeCommandSync(std::move(cmd));
+    Keycard::CommandResult result = executeCommand(std::move(cmd));
 
     if (!result.success && result.reason == Keycard::CommandResultType::Cancelled) {
         setState(SessionState::Cancelled);
@@ -615,7 +670,7 @@ QString SessionManager::loadMnemonic(const QString& mnemonic, const QString& pas
     qDebug() << "StatusKeycardQt::SessionManager: Loading seed onto keycard (" << seed.size() << " bytes)";
 
     auto cmd = std::make_unique<Keycard::LoadSeedCommand>(seed);
-    Keycard::CommandResult result = m_commMgr->executeCommandSync(std::move(cmd));
+    Keycard::CommandResult result = executeCommand(std::move(cmd));
 
     if (!result.success && result.reason == Keycard::CommandResultType::Cancelled) {
         setError("Cancelled");
@@ -649,7 +704,7 @@ bool SessionManager::factoryReset()
     setState(SessionState::FactoryResetting);
 
     auto cmd = std::make_unique<Keycard::FactoryResetCommand>();
-    Keycard::CommandResult result = m_commMgr->executeCommandSync(std::move(cmd));
+    Keycard::CommandResult result = executeCommand(std::move(cmd));
 
     if (!result.success && result.reason == Keycard::CommandResultType::Cancelled) {
         setError("Cancelled");
@@ -747,10 +802,12 @@ QByteArray SessionManager::exportKeyInternal(bool derive, bool makeCurrent, cons
     }
 
     auto cmd = std::make_unique<Keycard::ExportKeyCommand>(derive, makeCurrent, path, exportType);
-    Keycard::CommandResult result = m_commMgr->executeCommandSync(std::move(cmd));
+    Keycard::CommandResult result = executeCommand(std::move(cmd));
 
     if (!result.success && result.reason == Keycard::CommandResultType::Cancelled) {
-        setError("Cancelled");
+        setError(m_cardRemovedDuringComposite.load()
+                     ? QStringLiteral("Card removed")
+                     : (result.error.isEmpty() ? QStringLiteral("Cancelled") : result.error));
         return QByteArray();
     }
 
@@ -771,10 +828,12 @@ QByteArray SessionManager::exportKeyExtendedInternal(bool derive, bool makeCurre
     }
 
     auto cmd = std::make_unique<Keycard::ExportKeyExtendedCommand>(derive, makeCurrent, path);
-    Keycard::CommandResult result = m_commMgr->executeCommandSync(std::move(cmd));
+    Keycard::CommandResult result = executeCommand(std::move(cmd));
 
     if (!result.success && result.reason == Keycard::CommandResultType::Cancelled) {
-        setError("Cancelled");
+        setError(m_cardRemovedDuringComposite.load()
+                     ? QStringLiteral("Card removed")
+                     : (result.error.isEmpty() ? QStringLiteral("Cancelled") : result.error));
         return QByteArray();
     }
 
@@ -791,6 +850,10 @@ SessionManager::LoginKeys SessionManager::exportLoginKeys(bool isMainCommand)
 {
     // Serialize card operations to prevent concurrent APDU corruption
     QMutexLocker locker(&m_operationMutex);
+
+    if (failIfCardRemoved()) {
+        return LoginKeys();
+    }
 
     // Clear any previous error
     m_lastError.clear();
@@ -845,6 +908,10 @@ SessionManager::RecoverKeys SessionManager::exportRecoverKeys(bool isMainCommand
 {
     // Serialize card operations to prevent concurrent APDU corruption
     QMutexLocker locker(&m_operationMutex);
+
+    if (failIfCardRemoved()) {
+        return RecoverKeys();
+    }
 
     // Clear any previous error
     m_lastError.clear();
@@ -1055,7 +1122,7 @@ SessionManager::Metadata SessionManager::getMetadata(bool isMainCommand)
     qDebug() << "StatusKeycardQt::SessionManager: Getting metadata from card";
 
     auto cmd = std::make_unique<Keycard::GetMetadataCommand>();
-    Keycard::CommandResult result = m_commMgr->executeCommandSync(std::move(cmd));
+    Keycard::CommandResult result = executeCommand(std::move(cmd));
 
     if (!result.success) {
         if (result.reason == Keycard::CommandResultType::Cancelled) {
@@ -1169,7 +1236,7 @@ bool SessionManager::storeMetadata(const QString& name, const QStringList& paths
 
     // Store metadata using proper command queue
     auto cmd = std::make_unique<Keycard::StoreMetadataCommand>(name, paths);
-    Keycard::CommandResult result = m_commMgr->executeCommandSync(std::move(cmd));
+    Keycard::CommandResult result = executeCommand(std::move(cmd));
 
     if (!result.success && result.reason == Keycard::CommandResultType::Cancelled) {
         setError("Cancelled");
