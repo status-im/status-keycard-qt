@@ -162,9 +162,6 @@ static void ensure_global_context() {
 
 // Internal implementations behind the no-context wrappers below.
 static char* KeycardCallRPCWithContext(StatusKeycardContext ctx, const char* payload_json) {
-    qDebug() << "StatusKeycardQt::C API: KeycardCallRPCWithContext() called";
-    qDebug() << "StatusKeycardQt::C API: Payload:" << (payload_json ? payload_json : "NULL");
-
     if (!ctx || !payload_json) {
         qCritical() << "C API: Invalid context or payload!";
         // Return error response
@@ -174,11 +171,8 @@ static char* KeycardCallRPCWithContext(StatusKeycardContext ctx, const char* pay
 
     StatusKeycardContextImpl* impl = reinterpret_cast<StatusKeycardContextImpl*>(ctx);
 
-    // Process the JSON-RPC request
     QString request = QString::fromUtf8(payload_json);
-    qDebug() << "StatusKeycardQt::C API: Processing RPC request:" << request;
     QString response = impl->rpcService->processRequest(request);
-    qDebug() << "StatusKeycardQt::C API: RPC response:" << response;
 
     // Return response (caller must free with Free())
     return strdup(response.toUtf8().constData());
