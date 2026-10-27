@@ -245,6 +245,9 @@ void SessionManager::onCardInitialized(const Keycard::CardInitializationResult& 
         // CardInitializationResult::fromError() creates default/empty appInfo (don't check result.appInfo.installed).
         if (result.error.contains("Failed to select applet")) {
             setState(SessionState::NotKeycard);
+        } else if (result.error.contains(QLatin1String(Keycard::Errors::UntrustedCard))) {
+            setState(SessionState::UntrustedKeycard);
+            setError(result.error);
         } else if (result.error.contains("6A84") || result.error.contains("No available pairing slots")) {
             setState(SessionState::NoAvailablePairingSlots);
         } else if (result.error.contains("wrong pairing password") || result.error.contains("Invalid card cryptogram")) {
@@ -460,6 +463,7 @@ SessionManager::Status SessionManager::getStatus() const
         status.keycardInfo->instanceUID = m_appInfo.instanceUID.toHex();
         status.keycardInfo->version = QString("%1.%2").arg(m_appInfo.appVersion).arg(m_appInfo.appVersionMinor);
         status.keycardInfo->availableSlots = m_appInfo.availableSlots;
+        status.keycardInfo->secureChannelVersion = m_appInfo.secureChannelVersion;
         status.keycardInfo->keyUID = m_appInfo.keyUID.toHex();
     }
 
@@ -965,7 +969,7 @@ SessionManager::RecoverKeys SessionManager::exportRecoverKeys(bool isMainCommand
 
     // Export wallet root key (extended public if supported, otherwise public only)
     // Check if card supports extended keys (version >= 3.1)
-    bool supportsExtended = m_appInfo.appVersion >= 3 && m_appInfo.appVersionMinor >= 1;
+    bool supportsExtended = supportsExtendedPublicKeyExport();
     QByteArray walletRootData = supportsExtended ?
         exportKeyExtendedInternal(true, false, PathWalletRoot) :
         exportKeyInternal(true, false, PathWalletRoot, Keycard::APDU::P2ExportKeyPublicOnly);
@@ -997,6 +1001,12 @@ SessionManager::RecoverKeys SessionManager::exportRecoverKeys(bool isMainCommand
     return keys;
 }
 
+bool SessionManager::supportsExtendedPublicKeyExport() const
+{
+    // Applet 3.1+
+    return m_appInfo.appVersion > 3 || (m_appInfo.appVersion == 3 && m_appInfo.appVersionMinor >= 1);
+}
+
 SessionManager::ExtendedPublicKey SessionManager::exportExtendedPublicKey(const QString& path)
 {
     ExtendedPublicKey epk;
@@ -1005,7 +1015,7 @@ SessionManager::ExtendedPublicKey SessionManager::exportExtendedPublicKey(const 
         return epk;
     }
 
-    bool supportsExtended = m_appInfo.appVersion >= 3 && m_appInfo.appVersionMinor >= 1;
+    bool supportsExtended = supportsExtendedPublicKeyExport();
     bool isMaster = (path == "m");
     bool derive = !isMaster;
 
@@ -1036,9 +1046,10 @@ SessionManager::ExtendedPublicKey SessionManager::exportExtendedPublicKey(const 
         bool parentIsMaster = (pathInfo.parentPath == "m");
         bool parentDerive = !parentIsMaster;
 
-        QByteArray parentData = supportsExtended
-            ? exportKeyExtendedInternal(parentDerive, parentIsMaster, pathInfo.parentPath)
-            : exportKeyInternal(parentDerive, false, pathInfo.parentPath, Keycard::APDU::P2ExportKeyPublicOnly);
+        // The fingerprint needs only the parent public key; applet 4.x also refuses to export
+        // the master's extended public key
+        QByteArray parentData =
+            exportKeyInternal(parentDerive, false, pathInfo.parentPath, Keycard::APDU::P2ExportKeyPublicOnly);
 
         if (!parentData.isEmpty()) {
             KeyPair parentKp = parseExportedKey(parentData);
