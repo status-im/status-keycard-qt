@@ -8,8 +8,9 @@
 
 namespace IntegrationTest {
 
-SimulatorProcess::SimulatorProcess(const QString& simulatorDir, int port)
+SimulatorProcess::SimulatorProcess(const QString& simulatorDir, const QString& appletVersion, int port)
     : m_simulatorDir(simulatorDir)
+    , m_appletVersion(appletVersion)
     , m_port(port)
 {
 }
@@ -22,11 +23,13 @@ SimulatorProcess::~SimulatorProcess()
 bool SimulatorProcess::start(int timeoutMs)
 {
     SimulatorClient client(QStringLiteral("127.0.0.1"), m_port);
-    if (client.ping(1000) && client.supportsPowerCycle() && client.supportsCreateEmpty()) {
+    if (client.ping(1000) && client.supportsPowerCycle() && client.supportsCreateEmpty()
+        && client.appletVersion() == m_appletVersion) {
         return true;
     }
     if (client.ping(1000)) {
-        qWarning("Restarting outdated keycard simulator (missing POWER or CREATE_EMPTY)");
+        // run.sh stops a leftover simulator on the port before starting the requested applet
+        qWarning("Restarting keycard simulator (outdated, or not applet %s)", qPrintable(m_appletVersion));
     }
     if (m_process.state() != QProcess::NotRunning) {
         stop();
@@ -39,7 +42,7 @@ bool SimulatorProcess::start(int timeoutMs)
     }
 
     m_process.setProgram(QStringLiteral("/bin/bash"));
-    m_process.setArguments({runScript, QString::number(m_port), QStringLiteral("3.2")});
+    m_process.setArguments({runScript, QString::number(m_port), m_appletVersion});
     m_process.setWorkingDirectory(m_simulatorDir);
     m_process.setProcessChannelMode(QProcess::MergedChannels);
     m_process.start();

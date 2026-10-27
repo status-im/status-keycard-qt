@@ -15,6 +15,8 @@ struct StatusSignal {
     int remainingPinAttempts = -1;
     int remainingPukAttempts = -1;
     int availableSlots = -1;
+    int secureChannelVersion = -1;
+    QString version;
     QString instanceUid;
     QString keyUid;
 };

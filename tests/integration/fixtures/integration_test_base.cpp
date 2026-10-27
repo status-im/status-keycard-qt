@@ -1,4 +1,5 @@
 #include "integration_test_base.h"
+#include "test_constants.h"
 
 #include <QDateTime>
 
@@ -9,7 +10,7 @@ SimulatorProcess* IntegrationTestBase::s_simulator = nullptr;
 bool IntegrationTestBase::initSimulator()
 {
     if (!s_simulator) {
-        s_simulator = new SimulatorProcess(QString::fromUtf8(KEYCARD_SIMULATOR_DIR));
+        s_simulator = new SimulatorProcess(QString::fromUtf8(KEYCARD_SIMULATOR_DIR), simulatorAppletVersion());
         if (!s_simulator->start()) {
             delete s_simulator;
             s_simulator = nullptr;

@@ -75,6 +75,8 @@ void RpcClient::recordSignal(const QJsonObject& event)
         status.instanceUid = cardInfo.value(QStringLiteral("instanceUID")).toString();
         status.keyUid = cardInfo.value(QStringLiteral("keyUID")).toString();
         status.availableSlots = cardInfo.value(QStringLiteral("availableSlots")).toInt(-1);
+        status.secureChannelVersion = cardInfo.value(QStringLiteral("secureChannelVersion")).toInt(-1);
+        status.version = cardInfo.value(QStringLiteral("version")).toString();
     }
 
     QMutexLocker locker(&m_signalsMutex);

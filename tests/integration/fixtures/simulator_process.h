@@ -7,7 +7,7 @@ namespace IntegrationTest {
 
 class SimulatorProcess {
 public:
-    explicit SimulatorProcess(const QString& simulatorDir, int port = 9025);
+    SimulatorProcess(const QString& simulatorDir, const QString& appletVersion, int port = 9025);
     ~SimulatorProcess();
 
     bool start(int timeoutMs = 30000);
@@ -15,6 +15,7 @@ public:
 
 private:
     QString m_simulatorDir;
+    QString m_appletVersion;
     int m_port;
     QProcess m_process;
     bool m_ownsProcess = false;
