@@ -27,7 +27,16 @@ import im.status.keycardqt.sim.ExposedRuntime;
 public final class Card32Factory implements CardFactory {
 
     @Override
-    public CardSimulator newCard() {
+    public String appletVersion() {
+        return "3.2";
+    }
+
+    @Override
+    public CardSimulator newCard(boolean untrusted) {
+        if (untrusted) {
+            // 3.2 has no identity certificate, so there is no CA to distrust.
+            throw new UnsupportedOperationException("UNTRUSTED needs applet 4.x (3.2 has no identity certificate)");
+        }
         ExposedRuntime runtime = new ExposedRuntime();
         CardSimulator sim = new CardSimulator(runtime);
         CardInstall.install(sim, CardInstall.KEYCARD_AID, KeycardApplet.class, CardInstall.KEYCARD_INST, null);

@@ -14,6 +14,13 @@ import com.licel.jcardsim.smartcardio.CardSimulator;
  * depends only on this interface, never on {@code im.status.keycard.*}.
  */
 public interface CardFactory {
-    /** A brand-new card (one fresh CardSimulator per call). */
-    CardSimulator newCard();
+    /** The applet generation this factory produces, e.g. {@code "3.2"} or {@code "4.0"}. */
+    String appletVersion();
+
+    /**
+     * A brand-new card (one fresh CardSimulator per call). With @p untrusted, the card's identity
+     * certificate is signed by a CA the client is not expected to trust; versions without an identity
+     * certificate throw {@link UnsupportedOperationException} for it.
+     */
+    CardSimulator newCard(boolean untrusted);
 }
