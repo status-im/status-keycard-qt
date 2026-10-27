@@ -14,17 +14,18 @@ only to *regenerate* the vendored `libs/`.
 | version | secure channel | matches |
 |---------|----------------|---------|
 | **3.2** (default) | `SecureChannel` v1, password `PAIR` (`INS 0x12`) | introduced in the keycard-qt commit `df00b931` |
-| 4.0 | `SecureChannelV2` (cert-based, no `PAIR`) | a future keycard-qt with SCv2 support |
+| 4.0 | `SecureChannelV2` (cert-based, no `PAIR`) | applet tag `4.0.1`; keycard-qt with SCv2 support |
 
-keycard-qt (introduced in commit `df00b931`) sends `INS_PAIR 0x12`, which 4.0 removed — so **3.2 is the default and the only
-one wired to the app**. 4.0 is a ready scaffold (runs standalone, not driveable by the app yet).
+Both are supported. 3.2 stays the default for the classic `PAIR` flow; 4.0 is driven by keycard-qt's
+SecureChannelV2 client (`./run.sh <port> 4.0`). A client can ask a running server which one it is with
+`VERSION`.
 
 ## Layout
 
 ```
 src/im/status/keycardqt/sim/        # version-NEUTRAL core (no im.status.keycard.* imports)
   SimProtocolServer.java            #   TCP protocol + per-id card map; delegates to a CardFactory
-  CardFactory.java                  #   interface: CardSimulator newCard()
+  CardFactory.java                  #   interface: appletVersion(), newCard(untrusted)
   CardInstall.java                  #   shared AIDs + install + assignUniqueInstanceUid()
   ExposedRuntime.java               #   exposes jcardsim's installed applet (for the UID patch)
 libs/common/                        # version-independent: jcardsim, bcprov (bcprov only used by 4.0)
@@ -32,6 +33,7 @@ versions/<v>/
   libs/                             # keycard-applet, keycard-math (+ status-keycard-java for 4.0)
   src/.../v<v>/{Main,Card<v>Factory}.java   # entry point + that version's card recipe
   version.properties                # appletVersion, mainClass, needsPersonalization, provenance SHAs
+tools/                              # gen-scv2-vectors.sh + generator -> scv2-vectors.json (4.0)
 build.sh  run.sh  refresh-artifacts.sh
 ```
 
@@ -43,8 +45,16 @@ own `libs/` (`run.sh` puts one version on the classpath).
 
 - **3.2** — install KeycardApplet + NDEF + Cash + Ident, then `assignUniqueInstanceUid()`. That's a
   blank / post-`FactoryReset` card; the app drives INIT/pair/load-key over real APDUs.
-- **4.0** — same, plus store a CA-signed Ident certificate (the 4.0 applet rejects every APDU until
-  it has one). Still blank/no-key.
+- **4.0** — install the same applets, then store a CA-signed Ident certificate (the 4.0 applet rejects
+  every APDU until it has one). Still blank/no-key. Each card gets a random identity key; the
+  certificate is signed by one of two **fixed** test CAs, so a client can pin the trusted one:
+
+  | CA | private key | compressed public key |
+  |----|-------------|-----------------------|
+  | test (trusted) | SHA256(UTF-8 `keycard-qt simulator test CA`) | `036a5b809145f2c8f75d9737affd72d0a01c6696cbc5efdc69db70a3d2fbbf26fa` |
+  | untrusted (`CREATE <id> UNTRUSTED`) | SHA256(UTF-8 `keycard-qt simulator untrusted CA`) | `02571b5324234aebec0ab4554a50ac6aa95dea309ee35bc560e39f55d47af3c9b7` |
+
+  The 4.x applet has no instance UID (and no pairing), so `assignUniqueInstanceUid()` is 3.2-only.
 
 `assignUniqueInstanceUid()` overwrites the applet's instance UID with random bytes, because jcardsim's
 RNG is deterministic and would otherwise give every card the same UID — colliding in the lib's
@@ -55,7 +65,7 @@ pairing storage (keyed by instance UID).
 ```bash
 ./build.sh
 ./run.sh 9025            # applet 3.2 (default) on TCP 9025
-./run.sh 9025 4.0        # applet 4.0 (standalone only)
+./run.sh 9025 4.0        # applet 4.0 (SecureChannelV2)
 ```
 
 ## C++ integration tests
@@ -68,18 +78,23 @@ passes `-noverify` (jcardsim's `javacard.*` classes have no stackmap frames).
 ## Protocol (text, one request/response per line)
 
 ```
-CREATE <id>            -> OK <atrHex>   create if absent (no-op if present)
-RESET  <id>            -> OK            recreate fresh / blank
-POWER  <id>            -> OK            power-cycle volatile state (PIN session) without wiping EEPROM
-ATR    <id>            -> OK <atrHex>
-APDU   <id> <apduHex>  -> OK <respHex>
-PING                   -> OK
-<other>                -> ERR <message>
+VERSION                  -> OK <appletVersion>  e.g. OK 4.0 / OK 3.2
+CREATE <id>              -> OK <atrHex>   create if absent (no-op if present)
+CREATE <id> UNTRUSTED    -> OK <atrHex>   same, cert signed by the untrusted CA (4.x only; 3.2 -> ERR)
+CREATE_EMPTY <id>        -> OK <atrHex>   card with no Keycard applet (SELECT fails)
+RESET  <id>              -> OK            recreate fresh / blank, keeping the card's trust flavour
+POWER  <id>              -> OK            power-cycle volatile state (PIN session) without wiping EEPROM
+ATR    <id>              -> OK <atrHex>
+APDU   <id> <apduHex>    -> OK <respHex>
+PING                     -> OK
+<other>                  -> ERR <message>
 ```
 
 Each `<id>` is an independent card (e.g. `A`, `B`) for multi-card flows; state persists until `RESET`.
+`CREATE` on an existing id is a no-op even if the flag differs; use another id or `RESET` to change it.
 To check a running server by hand (SELECT the keycard AID; a blank 3.2 card replies with its
-secure-channel pubkey + `9000`):
+secure-channel pubkey + `9000`, a 4.0 card with an `A4` template whose tag `8A` is the 98-byte
+identity certificate):
 
 ```python
 import socket
@@ -87,6 +102,17 @@ s = socket.create_connection(("127.0.0.1", 9025))
 s.sendall(b"CREATE A\nAPDU A 00a4040009a00000080400010101\n")
 print(s.recv(8192).decode())   # OK <ATR>  then  OK 8041<pubkey>9000
 ```
+
+## SecureChannelV2 test vectors
+
+`tools/scv2-vectors.json` holds known-answer vectors for the C++ SCv2 client: the CA and a fixed
+identity key, the certificate (`v` is the raw recovery id 0..3), a full handshake with fixed salt and
+ephemeral keys (shared X, HKDF keys, transcript, one card signature) and two AES-CCM round trips
+(nonce 0 and 1). They come from the real 4.0 applet in jcardsim driven by the real host SDK, with the
+randomness pinned, and are cross-checked with BouncyCastle (`tools/src/.../GenScv2Vectors.java`).
+Regenerate with `./tools/gen-scv2-vectors.sh` — only the certificate signature and the card's
+handshake signature change between runs (both use a random ECDSA nonce); the notes in the JSON spell
+out the wire formats.
 
 ## Updating the vendored `libs/`
 
@@ -98,7 +124,9 @@ cd "$STATUS_KEYCARD_DIR" && git checkout <sha>   # need the jcardsim + keycard-m
 cd - && STATUS_KEYCARD_DIR="$STATUS_KEYCARD_DIR" ./refresh-artifacts.sh <version>
 ./build.sh   # recompile the recipe, then commit the changed libs/
 ```
-`STATUS_KEYCARD_DIR` is required (no default). Do **not** run `./gradlew compileJava` — it fails on JDK 9+
+`STATUS_KEYCARD_DIR` is required (no default); a `git worktree` of status-keycard works. For 4.0 the
+host SDK and bcprov are taken from the Gradle cache if present, otherwise downloaded from JitPack /
+Maven Central. Do **not** run `./gradlew compileJava` — it fails on JDK 9+
 (status-keycard targets source/target 1.6) and isn't needed: `refresh-artifacts.sh` recompiles the applet
 from source with `javac --release 11` (override with `APPLET_RELEASE`) rather than reusing gradle's class
 files, so the vendored `keycard-applet.jar` stays runnable on any JRE ≥ 11. Otherwise, if built with a
@@ -112,6 +140,10 @@ modules if missing, e.g. `./gradlew :keycard-math:jar`).
 | version | status-keycard | jcardsim | host SDK |
 |---------|----------------|----------|----------|
 | 3.2 | `72e9574` | `e1e351a` | `…:desktop:e898afd` (unused — install-only) |
-| 4.0 | `9973c3d` | `e1e351a` | `…:lib:b4ed9ca` (+ bcprov 1.65 for personalization) |
+| 4.0 | `37393a2` (tag `4.0.1`) | `e1e351a` | `…:lib:4.0.0` (+ bcprov 1.65 for personalization) |
 
-SHAs are also recorded in each `versions/<v>/version.properties`.
+SHAs are also recorded in each `versions/<v>/version.properties`. The 4.0 SDK is the one status-keycard
+`6f8544a` ("update SDK used for tests") moved its tests to (`…:desktop:4.0.0`, which pulls in
+`…:lib:4.0.0`; only `lib` is needed here). The vendored jcardsim jar is `e1e351a` plus status-keycard's
+local jcardsim patches (on-curve check in ECDH, transient EC private keys, `sendBytes` bounds) — the
+same jar both versions use.

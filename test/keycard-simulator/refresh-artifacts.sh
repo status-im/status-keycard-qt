@@ -30,7 +30,7 @@ if [ -z "${STATUS_KEYCARD_DIR:-}" ]; then
     exit 1
 fi
 SK="$STATUS_KEYCARD_DIR"
-[ -d "$SK/.git" ] || { echo "ERROR: STATUS_KEYCARD_DIR=$SK is not a git checkout of status-keycard"; exit 1; }
+[ -e "$SK/.git" ] || { echo "ERROR: STATUS_KEYCARD_DIR=$SK is not a git checkout of status-keycard"; exit 1; }
 
 getprop() { sed -n "s/^$1=//p" "$PROPS"; }
 needsPersonalization="$(getprop needsPersonalization)"
@@ -59,16 +59,27 @@ javac --release "$APPLET_RELEASE" -cp "$jcardsim:$math" -d "$appletOut" \
 jar cf "$VDIR/libs/keycard-applet.jar" -C "$appletOut" .
 
 # Versions that gate APDUs on a factory Ident certificate (4.0) also need the host SDK + BouncyCastle
-# (resolved into the Gradle cache by the status-keycard build) for personalization at newCard() time.
+# for personalization at newCard() time. Taken from the Gradle cache when the status-keycard build has
+# resolved them, otherwise downloaded (SDK from JitPack, bcprov from Maven Central).
 if [ "$needsPersonalization" = "true" ]; then
-    sdk_coord="$(getprop statusKeycardJavaSdk)"        # group:module:sha
+    sdk_coord="$(getprop statusKeycardJavaSdk)"        # group:module:ref (ref = tag or short sha)
     module="$(printf '%s' "$sdk_coord" | cut -d: -f2)" # lib | desktop
-    sha="$(printf '%s' "$sdk_coord" | cut -d: -f3)"
+    ref="$(printf '%s' "$sdk_coord" | cut -d: -f3)"
     GRADLE_CACHE="${GRADLE_USER_HOME:-$HOME/.gradle}/caches"
-    sdk_lib="$(find "$GRADLE_CACHE" -path "*status-keycard-java/$module/$sha/*/$module-$sha.jar" 2>/dev/null | head -1)"
+    sdk_lib="$(find "$GRADLE_CACHE" -path "*status-keycard-java/$module/$ref/*/$module-$ref.jar" 2>/dev/null | head -1)"
     bcprov="$(find "$GRADLE_CACHE" -name 'bcprov-jdk15on-1.65.jar' 2>/dev/null | head -1)"
-    [ -n "$sdk_lib" ] || { echo "ERROR: SDK jar $module-$sha.jar not found in $GRADLE_CACHE (build status-keycard first)"; exit 1; }
-    [ -n "$bcprov" ]  || { echo "ERROR: bcprov-jdk15on-1.65.jar not found in $GRADLE_CACHE"; exit 1; }
+    if [ -z "$sdk_lib" ]; then
+        sdk_lib="$appletOut/$module-$ref.jar"
+        url="https://jitpack.io/com/github/status-im/status-keycard-java/$module/$ref/$module-$ref.jar"
+        echo "SDK not in Gradle cache; downloading $url"
+        curl -sSfL -o "$sdk_lib" "$url" || { echo "ERROR: failed to download $url"; exit 1; }
+    fi
+    if [ -z "$bcprov" ]; then
+        bcprov="$appletOut/bcprov-jdk15on-1.65.jar"
+        url="https://repo1.maven.org/maven2/org/bouncycastle/bcprov-jdk15on/1.65/bcprov-jdk15on-1.65.jar"
+        echo "bcprov not in Gradle cache; downloading $url"
+        curl -sSfL -o "$bcprov" "$url" || { echo "ERROR: failed to download $url"; exit 1; }
+    fi
     cp "$sdk_lib" "$VDIR/libs/status-keycard-java-lib.jar"
     cp "$bcprov"  "$HERE/libs/common/bcprov-jdk15on-1.65.jar"   # version-independent (shared)
 fi

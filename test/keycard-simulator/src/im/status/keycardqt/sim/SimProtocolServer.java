@@ -11,6 +11,7 @@ import java.net.ServerSocket;
 import java.net.Socket;
 import java.nio.charset.StandardCharsets;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
@@ -25,9 +26,11 @@ import java.util.concurrent.ConcurrentHashMap;
  * protocol code serves any applet generation.
  *
  * Text line protocol (UTF-8, one request and one response per line, space separated):
+ *   VERSION                       -&gt; OK &lt;appletVersion&gt; e.g. "OK 4.0"
  *   CREATE &lt;cardId&gt;             -&gt; OK &lt;atrHex&gt;       create card if absent (no-op if present)
+ *   CREATE &lt;cardId&gt; UNTRUSTED   -&gt; OK &lt;atrHex&gt;       same, cert signed by the untrusted CA (4.x only)
  *   CREATE_EMPTY &lt;cardId&gt;       -&gt; OK &lt;atrHex&gt;       card with no Keycard applet (SELECT fails)
- *   RESET  &lt;cardId&gt;             -&gt; OK                 recreate card fresh / blank
+ *   RESET  &lt;cardId&gt;             -&gt; OK                 recreate card fresh / blank (same trust flavour)
  *   POWER  &lt;cardId&gt;             -&gt; OK                 power-cycle volatile applet state (PIN session)
  *   ATR    &lt;cardId&gt;             -&gt; OK &lt;atrHex&gt;
  *   APDU   &lt;cardId&gt; &lt;apduHex&gt;    -&gt; OK &lt;responseHex&gt;
@@ -42,6 +45,8 @@ public final class SimProtocolServer {
 
     private final CardFactory factory;
     private final Map<String, CardSimulator> cards = new ConcurrentHashMap<>();
+    /** Ids whose card was created UNTRUSTED, so RESET recreates the same flavour. */
+    private final Set<String> untrustedIds = ConcurrentHashMap.newKeySet();
 
     public SimProtocolServer(CardFactory factory) {
         this.factory = factory;
@@ -89,20 +94,32 @@ public final class SimProtocolServer {
         switch (op) {
             case "PING":
                 return "OK";
+            case "VERSION":
+                return "OK " + factory.appletVersion();
             case "CREATE": {
                 String id = arg(parts, 1);
-                CardSimulator sim = cards.computeIfAbsent(id, k -> factory.newCard());
+                boolean untrusted = parts.length > 2 && isUntrustedFlag(parts[2]);
+                CardSimulator sim = cards.computeIfAbsent(id, k -> {
+                    CardSimulator card = factory.newCard(untrusted);
+                    if (untrusted) {
+                        untrustedIds.add(k);
+                    } else {
+                        untrustedIds.remove(k);
+                    }
+                    return card;
+                });
                 return "OK " + bytesToHex(sim.getATR());
             }
             case "CREATE_EMPTY": {
                 String id = arg(parts, 1);
                 CardSimulator sim = new CardSimulator();
                 cards.put(id, sim);
+                untrustedIds.remove(id);
                 return "OK " + bytesToHex(sim.getATR());
             }
             case "RESET": {
                 String id = arg(parts, 1);
-                cards.put(id, factory.newCard());
+                cards.put(id, factory.newCard(untrustedIds.contains(id)));
                 return "OK";
             }
             case "POWER": {
@@ -141,6 +158,13 @@ public final class SimProtocolServer {
     }
 
     // ---- helpers ----------------------------------------------------------
+
+    private static boolean isUntrustedFlag(String flag) {
+        if (!"UNTRUSTED".equalsIgnoreCase(flag)) {
+            throw new IllegalArgumentException("unknown CREATE flag: " + flag);
+        }
+        return true;
+    }
 
     private static String arg(String[] parts, int i) {
         if (i >= parts.length) {
