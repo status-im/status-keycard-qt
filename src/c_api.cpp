@@ -69,6 +69,19 @@ struct StatusKeycardContextImpl {
             channel, pairingStorage, passwordProvider);
         qDebug() << "StatusKeycardQt::StatusKeycardContextImpl: Created CommandSet";
 
+#ifdef USE_SIMULATED_KEYCARD
+        {
+            // Simulated applet 4.x cards are certified by a fixed test CA (test/keycard-simulator/README.md);
+            // only simulator builds trust it. Override with STATUS_KEYCARD_SIM_TRUSTED_CA (compressed hex).
+            const char* simCa = std::getenv("STATUS_KEYCARD_SIM_TRUSTED_CA");
+            QList<QByteArray> trustedCaKeys = Keycard::defaultTrustedCaKeys();
+            trustedCaKeys.append(QByteArray::fromHex(
+                simCa ? QByteArray(simCa)
+                      : QByteArrayLiteral("036a5b809145f2c8f75d9737affd72d0a01c6696cbc5efdc69db70a3d2fbbf26fa")));
+            commandSet->setTrustedCaKeys(trustedCaKeys);
+        }
+#endif
+
         // Create and initialize CommunicationManager using CommandSet
         // CommunicationManager connects to CommandSet signals (cardReady, cardLost)
         // Note: We init() here but don't startDetection() yet

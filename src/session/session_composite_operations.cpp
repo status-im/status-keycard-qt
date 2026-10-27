@@ -295,7 +295,9 @@ SessionManager::RecoverKeys SessionManager::load(const QString& pin, const QStri
 
     auto cardContainsKeyOnly = false;
     auto status = getStatus();
-    if (!!status.keycardInfo && !status.keycardInfo->instanceUID.isEmpty() && status.keycardInfo->keyUID.isEmpty()) {
+    // Initialized (PIN set) but no key loaded. Not "has an instance UID": applet 4.x reports one
+    // (derived from its identity key) even on a blank card.
+    if (!!status.keycardInfo && status.keycardInfo->initialized && status.keycardInfo->keyUID.isEmpty()) {
         cardContainsKeyOnly = true;
     }
 

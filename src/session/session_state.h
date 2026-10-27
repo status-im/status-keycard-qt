@@ -9,6 +9,9 @@ namespace StatusKeycard {
  * 
  * These string values MUST match the Go implementation:
  * https://github.com/status-im/status-keycard-go/blob/main/internal/keycard_context_v2_state.go
+ *
+ * Exception: UntrustedKeycard is specific to this library (applet 4.x certificate check); the Go
+ * implementation has no applet 4.x support and no equivalent state.
  */
 enum class SessionState {
     UnknownReaderState,      // "unknown-reader-state"
@@ -29,6 +32,7 @@ enum class SessionState {
     InternalError,            // "internal-error"
     NoAvailablePairingSlots,  // "no-available-pairing-slots"
     Cancelled,                // "cancelled"
+    UntrustedKeycard,         // "untrusted-keycard": applet 4.x certificate not signed by a trusted CA
 };
 
 inline QString sessionStateToString(SessionState state) {
@@ -51,6 +55,7 @@ inline QString sessionStateToString(SessionState state) {
         case SessionState::InternalError:         return "internal-error";
         case SessionState::NoAvailablePairingSlots: return "no-available-pairing-slots";
         case SessionState::Cancelled:               return "cancelled";
+        case SessionState::UntrustedKeycard:        return "untrusted-keycard";
     }
     return "unknown-reader-state";
 }

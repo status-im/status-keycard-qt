@@ -94,6 +94,7 @@ public:
         QString xpub;       // Base58Check-encoded BIP32 extended public key
     };
     ExtendedPublicKey exportExtendedPublicKey(const QString& path);
+    bool supportsExtendedPublicKeyExport() const;
 
     struct ExportExtendedPublicKeyResult {
         ExtendedPublicKey extendedPublicKey;
@@ -196,8 +197,9 @@ public:
         bool initialized;
         QString instanceUID;
         QString version;
-        int availableSlots;
+        int availableSlots;  // Pairing slots; meaningless when secureChannelVersion == 2
         QString keyUID;
+        int secureChannelVersion = 1;  // 1 = password pairing (applet 3.x), 2 = no pairing (applet 4.x)
     };
 
     struct ApplicationStatus {

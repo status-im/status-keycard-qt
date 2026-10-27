@@ -123,6 +123,25 @@ is not needed again for that card.
 For `keycard.Recover` and `keycard.Load` the parameter does double duty: it is the password
 written to the card by INIT *and* the password used for the pairing that follows.
 
+#### Applet generations
+
+The card generation is detected on every SELECT and reported as
+`keycardInfo.secureChannelVersion`:
+
+| | applet 3.x (`secureChannelVersion: 1`) | applet 4.x (`secureChannelVersion: 2`) |
+|---|---|---|
+| Secure channel | password pairing (`PAIR`), stored per card in `storageFilePath` | SecureChannelV2: ephemeral ECDH per session, no pairing |
+| `pairingPassword` | used as described above | ignored |
+| `availableSlots` | free pairing slots | always `0`, carries no meaning |
+| `instanceUID` | the applet's instance UID | first 16 bytes of `SHA256(identity public key)` from the card certificate; stable across factory reset |
+| `pairing-error` / `no-available-pairing-slots` | possible | never |
+| `untrusted-keycard` | never | the card's identity certificate is not signed by a trusted CA, or its secure-channel signature does not verify |
+
+Clients should decide anything pairing-related from `secureChannelVersion`, never from
+`availableSlots`. Trusted CA keys come from `Keycard::defaultTrustedCaKeys()` in keycard-qt;
+`USE_SIMULATED_KEYCARD` builds additionally trust the simulator's test CA
+(override with `STATUS_KEYCARD_SIM_TRUSTED_CA`, compressed hex).
+
 All operation methods accept optional `logEnabled` / `logFilePath` params and
 implicitly start card detection — they **block until a card is ready** (or the
 operation is cancelled via `keycard.CancelCurrentOperation`).
@@ -201,6 +220,10 @@ cmake .. \
 cmake --build . -j$(sysctl -n hw.ncpu 2>/dev/null || nproc)
 ctest -L integration --output-on-failure
 ```
+
+Every integration test runs once per applet generation: `<name>_v3` against applet 3.2 and
+`<name>_v4` against applet 4.0 (pairing-only tests are `_v3` only, `test_secure_channel_v2` is
+`_v4` only). Select one generation with `ctest -L integration-v3` or `ctest -L integration-v4`.
 
 Run mock unit tests only (no JVM): configure without `USE_SIMULATED_KEYCARD`.
 
