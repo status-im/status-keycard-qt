@@ -31,6 +31,18 @@ inline constexpr const char* kMnemonicB =
 inline constexpr int kSimulatorPort = 9025;
 inline constexpr const char* kSimulatorHost = "127.0.0.1";
 
+// Applet the simulator runs: KEYCARD_SIM_APPLET ("3.2" default, "4.0"), set per test by CMake
+inline QString simulatorAppletVersion()
+{
+    const QString version = qEnvironmentVariable("KEYCARD_SIM_APPLET");
+    return version.isEmpty() ? QStringLiteral("3.2") : version;
+}
+
+inline bool simulatorUsesSecureChannelV2()
+{
+    return simulatorAppletVersion().startsWith(QLatin1Char('4'));
+}
+
 inline QString rpcErrorMessage(const QJsonObject& response)
 {
     return response.value(QStringLiteral("error")).toObject().value(QStringLiteral("message")).toString();

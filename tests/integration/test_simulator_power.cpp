@@ -76,6 +76,9 @@ private slots:
 
     void test_pairingSurvivesCardRemoval()
     {
+        if (simulatorUsesSecureChannelV2()) {
+            QSKIP("applet 4.x has no pairing");
+        }
         const QString cardId = freshCardId(QStringLiteral("power-pair"));
         const QJsonObject load = m_rpc.loadCard(cardId, QString::fromUtf8(kMnemonicA));
         QVERIFY2(rpcSucceeded(load), qPrintable(rpcErrorMessage(load)));

@@ -58,4 +58,16 @@ bool SimulatorClient::createEmptyCard(const QString& cardId) const
     return response.startsWith(QStringLiteral("OK"));
 }
 
+bool SimulatorClient::createUntrustedCard(const QString& cardId) const
+{
+    const QString response = command(QStringLiteral("CREATE %1 UNTRUSTED").arg(cardId));
+    return response.startsWith(QStringLiteral("OK"));
+}
+
+QString SimulatorClient::appletVersion() const
+{
+    const QString response = command(QStringLiteral("VERSION"));
+    return response.startsWith(QStringLiteral("OK ")) ? response.mid(3).trimmed() : QString();
+}
+
 } // namespace IntegrationTest
