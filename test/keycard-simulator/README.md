@@ -28,6 +28,8 @@ src/im/status/keycardqt/sim/        # version-NEUTRAL core (no im.status.keycard
   CardFactory.java                  #   interface: appletVersion(), newCard(untrusted)
   CardInstall.java                  #   shared AIDs + install + assignUniqueInstanceUid()
   ExposedRuntime.java               #   exposes jcardsim's installed applet (for the UID patch)
+  IdentCertificates.java            #   fixed test CAs + identity certificates + IdentApplet STORE DATA
+  IdentityCardSimulator.java        #   card that owns its identity (see below)
 libs/common/                        # version-independent: jcardsim, bcprov (bcprov only used by 4.0)
 versions/<v>/
   libs/                             # keycard-applet, keycard-math (+ status-keycard-java for 4.0)
@@ -43,18 +45,26 @@ own `libs/` (`run.sh` puts one version on the classpath).
 
 ## Card recipe (`Card<v>Factory.newCard()`)
 
-- **3.2** — install KeycardApplet + NDEF + Cash + Ident, then `assignUniqueInstanceUid()`. That's a
-  blank / post-`FactoryReset` card; the app drives INIT/pair/load-key over real APDUs.
+- **3.2** — install KeycardApplet + NDEF + Cash + Ident, `assignUniqueInstanceUid()`, then store a
+  CA-signed Ident certificate (handed out by IDENTIFY, blank or initialized). That's a blank /
+  post-`FactoryReset` card; the app drives INIT/pair/load-key over real APDUs.
 - **4.0** — install the same applets, then store a CA-signed Ident certificate (the 4.0 applet rejects
-  every APDU until it has one). Still blank/no-key. Each card gets a random identity key; the
-  certificate is signed by one of two **fixed** test CAs, so a client can pin the trusted one:
+  every APDU until it has one, and reports it in SELECT). Still blank/no-key.
 
-  | CA | private key | compressed public key |
-  |----|-------------|-----------------------|
-  | test (trusted) | SHA256(UTF-8 `keycard-qt simulator test CA`) | `036a5b809145f2c8f75d9737affd72d0a01c6696cbc5efdc69db70a3d2fbbf26fa` |
-  | untrusted (`CREATE <id> UNTRUSTED`) | SHA256(UTF-8 `keycard-qt simulator untrusted CA`) | `02571b5324234aebec0ab4554a50ac6aa95dea309ee35bc560e39f55d47af3c9b7` |
+Both generations give each card a random identity key, with the certificate signed by one of two
+**fixed** test CAs (`IdentCertificates`), so a client can pin the trusted one:
 
-  The 4.x applet has no instance UID (and no pairing), so `assignUniqueInstanceUid()` is 3.2-only.
+| CA | private key | compressed public key |
+|----|-------------|-----------------------|
+| test (trusted) | SHA256(UTF-8 `keycard-qt simulator test CA`) | `036a5b809145f2c8f75d9737affd72d0a01c6696cbc5efdc69db70a3d2fbbf26fa` |
+| untrusted (`CREATE <id> UNTRUSTED`) | SHA256(UTF-8 `keycard-qt simulator untrusted CA`) | `02571b5324234aebec0ab4554a50ac6aa95dea309ee35bc560e39f55d47af3c9b7` |
+
+The 4.x applet has no instance UID (and no pairing), so `assignUniqueInstanceUid()` is 3.2-only.
+
+The applets keep the identity in `SharedMemory`, whose fields are **static**, so in one JVM every card
+would share the identity of the card created last (and installing an IdentApplet clears it). Each card
+is therefore an `IdentityCardSimulator`: it keeps its own identity and puts it back into `SharedMemory`
+before handling an APDU, under one lock for all cards, which card creation holds too.
 
 `assignUniqueInstanceUid()` overwrites the applet's instance UID with random bytes, because jcardsim's
 RNG is deterministic and would otherwise give every card the same UID — colliding in the lib's
@@ -80,7 +90,7 @@ passes `-noverify` (jcardsim's `javacard.*` classes have no stackmap frames).
 ```
 VERSION                  -> OK <appletVersion>  e.g. OK 4.0 / OK 3.2
 CREATE <id>              -> OK <atrHex>   create if absent (no-op if present)
-CREATE <id> UNTRUSTED    -> OK <atrHex>   same, cert signed by the untrusted CA (4.x only; 3.2 -> ERR)
+CREATE <id> UNTRUSTED    -> OK <atrHex>   same, identity cert signed by the untrusted CA
 CREATE_EMPTY <id>        -> OK <atrHex>   card with no Keycard applet (SELECT fails)
 RESET  <id>              -> OK            recreate fresh / blank, keeping the card's trust flavour
 POWER  <id>              -> OK            power-cycle volatile state (PIN session) without wiping EEPROM

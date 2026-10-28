@@ -28,7 +28,7 @@ import java.util.concurrent.ConcurrentHashMap;
  * Text line protocol (UTF-8, one request and one response per line, space separated):
  *   VERSION                       -&gt; OK &lt;appletVersion&gt; e.g. "OK 4.0"
  *   CREATE &lt;cardId&gt;             -&gt; OK &lt;atrHex&gt;       create card if absent (no-op if present)
- *   CREATE &lt;cardId&gt; UNTRUSTED   -&gt; OK &lt;atrHex&gt;       same, cert signed by the untrusted CA (4.x only)
+ *   CREATE &lt;cardId&gt; UNTRUSTED   -&gt; OK &lt;atrHex&gt;       same, identity cert signed by the untrusted CA
  *   CREATE_EMPTY &lt;cardId&gt;       -&gt; OK &lt;atrHex&gt;       card with no Keycard applet (SELECT fails)
  *   RESET  &lt;cardId&gt;             -&gt; OK                 recreate card fresh / blank (same trust flavour)
  *   POWER  &lt;cardId&gt;             -&gt; OK                 power-cycle volatile applet state (PIN session)
