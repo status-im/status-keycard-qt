@@ -135,7 +135,8 @@ The card generation is detected on every SELECT and reported as
 | `availableSlots` | free pairing slots | always `0`, carries no meaning |
 | `instanceUID` | the applet's instance UID | first 16 bytes of `SHA256(identity public key)` from the card certificate; stable across factory reset |
 | `pairing-error` / `no-available-pairing-slots` | possible | never |
-| `untrusted-keycard` | never | the card's identity certificate is not signed by a trusted CA, or its secure-channel signature does not verify |
+| `certificateTrusted` | always `true` | `false` when no trusted CA signed the card's identity certificate (development or custom-made cards). Informational only: the card works normally |
+| `untrusted-keycard` | never | the card's secure-channel signature does not verify against the identity key in its own certificate; the card cannot be used |
 
 Clients should decide anything pairing-related from `secureChannelVersion`, never from
 `availableSlots`. Trusted CA keys come from `Keycard::defaultTrustedCaKeys()` in keycard-qt;

@@ -76,6 +76,7 @@ void RpcClient::recordSignal(const QJsonObject& event)
         status.keyUid = cardInfo.value(QStringLiteral("keyUID")).toString();
         status.availableSlots = cardInfo.value(QStringLiteral("availableSlots")).toInt(-1);
         status.secureChannelVersion = cardInfo.value(QStringLiteral("secureChannelVersion")).toInt(-1);
+        status.certificateTrusted = cardInfo.value(QStringLiteral("certificateTrusted")).toBool(true);
         status.version = cardInfo.value(QStringLiteral("version")).toString();
     }
 

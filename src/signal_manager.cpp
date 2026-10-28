@@ -47,6 +47,7 @@ void SignalManager::emitStatusChanged(const SessionManager::Status& status)
         info["version"] = status.keycardInfo->version;
         info["availableSlots"] = status.keycardInfo->availableSlots;
         info["secureChannelVersion"] = status.keycardInfo->secureChannelVersion;
+        info["certificateTrusted"] = status.keycardInfo->certificateTrusted;
         info["keyUID"] = status.keycardInfo->keyUID;
         event["keycardInfo"] = info;
     } else {

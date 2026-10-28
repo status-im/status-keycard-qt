@@ -200,6 +200,9 @@ public:
         int availableSlots;  // Pairing slots; meaningless when secureChannelVersion == 2
         QString keyUID;
         int secureChannelVersion = 1;  // 1 = password pairing (applet 3.x), 2 = no pairing (applet 4.x)
+        // Applet 4.x: false when no trusted CA signed the card's certificate (development or
+        // custom-made card). Informational, the card works normally. Always true on applet 3.x.
+        bool certificateTrusted = true;
     };
 
     struct ApplicationStatus {

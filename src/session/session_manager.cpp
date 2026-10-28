@@ -245,7 +245,7 @@ void SessionManager::onCardInitialized(const Keycard::CardInitializationResult& 
         // CardInitializationResult::fromError() creates default/empty appInfo (don't check result.appInfo.installed).
         if (result.error.contains("Failed to select applet")) {
             setState(SessionState::NotKeycard);
-        } else if (result.error.contains(QLatin1String(Keycard::Errors::UntrustedCard))) {
+        } else if (result.error.contains(QLatin1String(Keycard::Errors::CardAuthenticationFailed))) {
             setState(SessionState::UntrustedKeycard);
             setError(result.error);
         } else if (result.error.contains("6A84") || result.error.contains("No available pairing slots")) {
@@ -464,6 +464,7 @@ SessionManager::Status SessionManager::getStatus() const
         status.keycardInfo->version = QString("%1.%2").arg(m_appInfo.appVersion).arg(m_appInfo.appVersionMinor);
         status.keycardInfo->availableSlots = m_appInfo.availableSlots;
         status.keycardInfo->secureChannelVersion = m_appInfo.secureChannelVersion;
+        status.keycardInfo->certificateTrusted = m_appInfo.certificateTrusted;
         status.keycardInfo->keyUID = m_appInfo.keyUID.toHex();
     }
 
