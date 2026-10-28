@@ -16,6 +16,7 @@ struct StatusSignal {
     int remainingPukAttempts = -1;
     int availableSlots = -1;
     int secureChannelVersion = -1;
+    bool certificateTrusted = true;
     QString version;
     QString instanceUid;
     QString keyUid;

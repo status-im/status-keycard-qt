@@ -141,6 +141,7 @@ void TestSignalManager::testEmitStatusChanged()
     QCOMPARE(keycardInfo["version"].toString(), QString("3.0"));
     QCOMPARE(keycardInfo["availableSlots"].toInt(), 3);
     QCOMPARE(keycardInfo["secureChannelVersion"].toInt(), 1);  // default: applet 3.x
+    QCOMPARE(keycardInfo["certificateTrusted"].toBool(), true);
     
     // Verify keycardStatus
     QVERIFY(event.contains("keycardStatus"));

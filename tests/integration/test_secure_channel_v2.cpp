@@ -118,9 +118,10 @@ private slots:
         QVERIFY(m_rpc.keycardUidFromLastStatus() != keycardUid);
     }
 
-    void test_untrustedCardIsRefused()
+    void test_unknownCaCardIsUsable()
     {
-        const QString cardId = freshCardId(QStringLiteral("scv2-untrusted"));
+        // Development or custom-made cards: reported, never refused
+        const QString cardId = freshCardId(QStringLiteral("scv2-unknown-ca"));
         SimulatorClient simulator(QString::fromUtf8(kSimulatorHost), kSimulatorPort);
         QVERIFY(simulator.createUntrustedCard(cardId));
 
@@ -134,9 +135,24 @@ private slots:
         params.insert(QStringLiteral("puk"), QString::fromUtf8(kDefaultPuk));
         params.insert(QStringLiteral("mnemonic"), QString::fromUtf8(kMnemonicA));
         const QJsonObject load = m_rpc.callRpc(QStringLiteral("keycard.Load"), params);
-        QVERIFY(!rpcSucceeded(load));
-        QVERIFY2(sawState(QStringLiteral("untrusted-keycard")),
-                 qPrintable(QStringLiteral("last state: %1").arg(m_rpc.lastStatusSignal().state)));
+        QVERIFY2(rpcSucceeded(load), qPrintable(rpcErrorMessage(load)));
+        QVERIFY(!sawState(QStringLiteral("untrusted-keycard")));
+        QVERIFY(!lastSignalWithCardInfo().certificateTrusted);
+        const QString keyUid = m_rpc.keyUidFromLastStatus();
+
+        m_rpc.stop();
+        m_rpc.plugInsertCard(cardId);
+        m_rpc.clearSignals();
+        const QJsonObject login = m_rpc.login(QString::fromUtf8(kDefaultPin), keyUid);
+        QVERIFY2(rpcSucceeded(login), qPrintable(rpcErrorMessage(login)));
+        QVERIFY(!lastSignalWithCardInfo().certificateTrusted);
+    }
+
+    void test_trustedCaCardIsReportedTrusted()
+    {
+        const QString cardId = freshCardId(QStringLiteral("scv2-trusted-ca"));
+        QVERIFY(rpcSucceeded(m_rpc.loadCard(cardId, QString::fromUtf8(kMnemonicA))));
+        QVERIFY(lastSignalWithCardInfo().certificateTrusted);
     }
 };
 
