@@ -18,9 +18,8 @@ public interface CardFactory {
     String appletVersion();
 
     /**
-     * A brand-new card (one fresh CardSimulator per call). With @p untrusted, the card's identity
-     * certificate is signed by a CA the client is not expected to trust; versions without an identity
-     * certificate throw {@link UnsupportedOperationException} for it.
+     * A brand-new card (one fresh CardSimulator per call), with a factory identity certificate signed
+     * by the trusted test CA, or with @p untrusted by a CA the client is not expected to trust.
      */
     CardSimulator newCard(boolean untrusted);
 }

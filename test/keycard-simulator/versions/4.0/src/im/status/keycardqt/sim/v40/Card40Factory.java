@@ -9,14 +9,11 @@ import im.status.keycard.NDEFApplet;
 import im.status.keycard.CashApplet;
 import im.status.keycard.IdentApplet;
 import im.status.keycard.applet.Certificate;
-import im.status.keycard.applet.IdentCommandSet;
-import im.status.keycard.io.APDUCommand;
-import im.status.keycard.io.APDUResponse;
-import im.status.keycard.io.CardChannel;
 
 import im.status.keycardqt.sim.CardFactory;
 import im.status.keycardqt.sim.CardInstall;
 import im.status.keycardqt.sim.ExposedRuntime;
+import im.status.keycardqt.sim.IdentityCardSimulator;
 
 import org.bouncycastle.jce.ECNamedCurveTable;
 import org.bouncycastle.jce.provider.BouncyCastleProvider;
@@ -83,15 +80,14 @@ public final class Card40Factory implements CardFactory {
 
     /** A card personalized with @p cert (identity key + CA signature), on the given runtime. */
     public static CardSimulator newCard(ExposedRuntime runtime, Certificate cert) {
-        CardSimulator sim = new CardSimulator(runtime);
-        CardInstall.install(sim, CardInstall.KEYCARD_AID, KeycardApplet.class, CardInstall.KEYCARD_INST, null);
-        CardInstall.install(sim, CardInstall.NDEF_AID, NDEFApplet.class, CardInstall.NDEF_INST, CardInstall.SECONDARY_PARAMS);
-        CardInstall.install(sim, CardInstall.CASH_AID, CashApplet.class, CardInstall.CASH_INST, CardInstall.SECONDARY_PARAMS);
-        CardInstall.install(sim, CardInstall.IDENT_AID, IdentApplet.class, CardInstall.IDENT_INST, CardInstall.SECONDARY_PARAMS);
-        // No assignUniqueInstanceUid(): the 4.x applet dropped the instance UID (SELECT has no 0x8F and
-        // there is no pairing to key by it); the card's random identity key is what makes it unique.
-        personalize(sim, cert);
-        return sim;
+        return IdentityCardSimulator.create(runtime, sim -> {
+            CardInstall.install(sim, CardInstall.KEYCARD_AID, KeycardApplet.class, CardInstall.KEYCARD_INST, null);
+            CardInstall.install(sim, CardInstall.NDEF_AID, NDEFApplet.class, CardInstall.NDEF_INST, CardInstall.SECONDARY_PARAMS);
+            CardInstall.install(sim, CardInstall.CASH_AID, CashApplet.class, CardInstall.CASH_INST, CardInstall.SECONDARY_PARAMS);
+            CardInstall.install(sim, CardInstall.IDENT_AID, IdentApplet.class, CardInstall.IDENT_INST, CardInstall.SECONDARY_PARAMS);
+            // No assignUniqueInstanceUid(): the 4.x applet dropped the instance UID (SELECT has no 0x8F and
+            // there is no pairing to key by it); the card's random identity key is what makes it unique.
+        }, cert.toStoreData());
     }
 
     /** Deterministic secp256k1 keypair whose private key is SHA256(UTF-8 @p label). */
@@ -106,29 +102,6 @@ public final class Card40Factory implements CardFactory {
                     kf.generatePrivate(new ECPrivateKeySpec(s, spec)));
         } catch (Exception e) {
             throw new RuntimeException("failed to derive keypair for '" + label + "'", e);
-        }
-    }
-
-    /** Factory personalization: store a CA-signed identity certificate in the IdentApplet. */
-    private static void personalize(CardSimulator sim, Certificate cert) {
-        CardChannel ch = new CardChannel() {
-            @Override
-            public APDUResponse send(APDUCommand cmd) throws java.io.IOException {
-                synchronized (sim) {
-                    return new APDUResponse(sim.transmitCommand(cmd.serialize()));
-                }
-            }
-            @Override
-            public boolean isConnected() {
-                return true;
-            }
-        };
-        try {
-            IdentCommandSet ident = new IdentCommandSet(ch);
-            ident.select().checkOK();
-            ident.storeData(cert.toStoreData()).checkOK();
-        } catch (Exception e) {
-            throw new RuntimeException("IdentApplet personalization failed", e);
         }
     }
 }
