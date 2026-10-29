@@ -71,7 +71,7 @@ struct StatusKeycardContextImpl {
 
 #ifdef USE_SIMULATED_KEYCARD
         {
-            // Simulated applet 4.x cards are certified by a fixed test CA (test/keycard-simulator/README.md);
+            // Simulated cards (both applet generations) are certified by a fixed test CA (test/keycard-simulator/README.md);
             // only simulator builds trust it. Override with STATUS_KEYCARD_SIM_TRUSTED_CA (compressed hex).
             const char* simCa = std::getenv("STATUS_KEYCARD_SIM_TRUSTED_CA");
             QList<QByteArray> trustedCaKeys = Keycard::defaultTrustedCaKeys();
