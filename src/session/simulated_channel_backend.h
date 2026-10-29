@@ -35,8 +35,11 @@ public:
     bool attach(const QString& endpoint);
     /** Create a fresh/empty card @p cardId in the simulator's map, without presenting it. */
     bool createCard(const QString& cardId);
-    /** Make @p cardId the inserted card (creating it on the server if needed) and emit detection. */
-    bool insertCard(const QString& cardId);
+    /**
+     * Make @p cardId the inserted card (creating it on the server if needed) and emit detection.
+     * @p sessionStarted: a session is running, even if idle between flows (see insertCard()).
+     */
+    bool insertCard(const QString& cardId, bool sessionStarted = false);
     /** Remove the currently inserted card (emits cardRemoved). */
     void removeCard();
     /** Simulate the reader being plugged in / unplugged. */
@@ -85,6 +88,9 @@ private:
     std::atomic<bool> m_cardPresent{false};
     std::atomic<bool> m_cardAnnounced{false};  // has targetDetected been emitted for the current card?
     std::atomic<bool> m_detecting{false};
+    // A flow has waited for a card since the last stopDetection(): the PC/SC backend's detection thread
+    // would still be watching the reader. Kept apart from m_detecting, which isDetectionActive() reports.
+    std::atomic<bool> m_cardWatched{false};
     std::atomic<bool> m_readerPresent{false};  // reader starts unplugged (mirrors no reader present)
     Keycard::ChannelState m_lifecycleState{Keycard::ChannelState::Idle};
 };

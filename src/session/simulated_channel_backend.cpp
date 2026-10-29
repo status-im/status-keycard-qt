@@ -145,7 +145,8 @@ bool SimulatedChannelBackend::attach(const QString& endpoint) {
     return true;
 }
 
-bool SimulatedChannelBackend::insertCard(const QString& cardId) {
+bool SimulatedChannelBackend::insertCard(const QString& cardId, bool sessionStarted) {
+    const bool reinserted = !m_cardPresent; // a card already in the reader is not detected again
     {
         QMutexLocker lock(&m_mutex);
         try {
@@ -161,11 +162,15 @@ bool SimulatedChannelBackend::insertCard(const QString& cardId) {
     m_cardAnnounced = false;   // fresh card: not yet announced
 
     emit readerAvailabilityChanged(true);
-    // Announce only if the lib is already waiting for a card (an interactive insert during a flow).
+    // Announce if the lib is waiting for a card (an interactive insert during a flow), or if a card is
+    // put in the reader while a session is running and idle between flows: the PC/SC backend's
+    // detection thread keeps running then (the session going Idle does not stop it), so a card
+    // reinserted after a failed login is read again.
     // If the card is inserted BEFORE a flow runs, publishPresence() announces it once when the flow
     // enters WaitingForCard (see setState) — announcing here too would double-detect and reset the
     // secure channel mid-flow.
-    if (m_lifecycleState == Keycard::ChannelState::WaitingForCard) {
+    if (m_lifecycleState == Keycard::ChannelState::WaitingForCard
+        || (sessionStarted && m_cardWatched && reinserted)) {
         announceCard();
     }
     qDebug() << "SimulatedChannelBackend: inserted card" << cardId << "uid" << toHex(cardId.toUtf8());
@@ -262,6 +267,7 @@ void SimulatedChannelBackend::startDetection() {
 
 void SimulatedChannelBackend::stopDetection() {
     m_detecting = false;
+    m_cardWatched = false;
     emit targetDetectionStopped(false);
 }
 
@@ -298,6 +304,7 @@ void SimulatedChannelBackend::setState(Keycard::ChannelState state) {
     // reader/card presence here — that's what makes SessionManager show "plug reader" when no
     // reader is plugged, instead of jumping straight to "insert keycard".
     if (state == Keycard::ChannelState::WaitingForCard) {
+        m_cardWatched = true; // like KeycardChannelPcsc::setState(), which starts its detection thread
         if (freshWait) {
             m_cardAnnounced = false;
         }
