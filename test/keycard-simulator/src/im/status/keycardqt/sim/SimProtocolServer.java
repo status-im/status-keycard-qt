@@ -32,6 +32,8 @@ import java.util.concurrent.ConcurrentHashMap;
  *   CREATE_EMPTY &lt;cardId&gt;       -&gt; OK &lt;atrHex&gt;       card with no Keycard applet (SELECT fails)
  *   RESET  &lt;cardId&gt;             -&gt; OK                 recreate card fresh / blank (same trust flavour)
  *   POWER  &lt;cardId&gt;             -&gt; OK                 power-cycle volatile applet state (PIN session)
+ *   COUNTERFEIT &lt;cardId&gt;        -&gt; OK                 swap the card's identity key, keeping its certificate
+ *                                                      and state: a genuine certificate it cannot sign for
  *   ATR    &lt;cardId&gt;             -&gt; OK &lt;atrHex&gt;
  *   APDU   &lt;cardId&gt; &lt;apduHex&gt;    -&gt; OK &lt;responseHex&gt;
  *   PING                          -&gt; OK
@@ -129,6 +131,14 @@ public final class SimProtocolServer {
                     // Full power cycle clears volatile PIN session state while keeping EEPROM.
                     sim.reset();
                 }
+                return "OK";
+            }
+            case "COUNTERFEIT": {
+                CardSimulator sim = require(arg(parts, 1));
+                if (!(sim instanceof IdentityCardSimulator)) {
+                    throw new IllegalArgumentException("card has no identity certificate");
+                }
+                ((IdentityCardSimulator) sim).counterfeit();
                 return "OK";
             }
             case "ATR": {

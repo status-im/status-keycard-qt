@@ -49,6 +49,19 @@ public final class IdentityCardSimulator extends CardSimulator {
         return sim;
     }
 
+    /**
+     * Swap the card's identity key for an unrelated one, keeping its certificate and all other state:
+     * the card turns into a counterfeit that carries a genuine certificate it cannot sign for.
+     */
+    public void counterfeit() {
+        synchronized (IDENTITY_LOCK) {
+            identity = IdentCertificates.withForeignKey(identity);
+            if (active == this) {
+                active = null; // restored with the new key before the next APDU
+            }
+        }
+    }
+
     @Override
     public byte[] transmitCommand(byte[] apdu) {
         synchronized (IDENTITY_LOCK) {
