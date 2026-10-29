@@ -64,6 +64,12 @@ bool SimulatorClient::createUntrustedCard(const QString& cardId) const
     return response.startsWith(QStringLiteral("OK"));
 }
 
+bool SimulatorClient::counterfeitCard(const QString& cardId) const
+{
+    const QString response = command(QStringLiteral("COUNTERFEIT %1").arg(cardId));
+    return response.startsWith(QStringLiteral("OK"));
+}
+
 QString SimulatorClient::appletVersion() const
 {
     const QString response = command(QStringLiteral("VERSION"));

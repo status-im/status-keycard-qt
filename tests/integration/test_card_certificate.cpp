@@ -95,6 +95,34 @@ private slots:
         QVERIFY(!lastSignalWithCardInfo().certificateTrusted);
     }
 
+    void test_counterfeitCard()
+    {
+        // A loaded card whose identity key is then swapped: it keeps a genuine certificate it cannot
+        // sign for (a copied certificate), and the keys of the profile
+        const QString cardId = freshCardId(QStringLiteral("cert-counterfeit"));
+        SimulatorClient simulator(QString::fromUtf8(kSimulatorHost), kSimulatorPort);
+        QVERIFY(simulator.resetCard(cardId));
+        const QString keyUid = loadAndLogin(cardId);
+        QVERIFY(!keyUid.isEmpty());
+        QVERIFY(lastSignalWithCardInfo().certificateTrusted);
+
+        QVERIFY(simulator.counterfeitCard(cardId));
+        m_rpc.stop();
+        m_rpc.plugInsertCard(cardId);
+        m_rpc.clearSignals();
+        const QJsonObject login = m_rpc.login(QString::fromUtf8(kDefaultPin), keyUid);
+
+        if (simulatorUsesSecureChannelV2()) {
+            // 4.x: the secure channel is signed by the identity key, so the card cannot be used at all
+            QVERIFY(!rpcSucceeded(login));
+            QVERIFY(sawState(QStringLiteral("untrusted-keycard")));
+        } else {
+            // 3.x: only IDENTIFY uses the identity key; the card fails it and is reported untrusted
+            QVERIFY2(rpcSucceeded(login), qPrintable(rpcErrorMessage(login)));
+            QVERIFY(!lastSignalWithCardInfo().certificateTrusted);
+        }
+    }
+
     void test_trustedCaCardIsReportedTrusted()
     {
         const QString cardId = freshCardId(QStringLiteral("cert-trusted-ca"));

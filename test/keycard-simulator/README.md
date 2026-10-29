@@ -66,6 +66,12 @@ would share the identity of the card created last (and installing an IdentApplet
 is therefore an `IdentityCardSimulator`: it keeps its own identity and puts it back into `SharedMemory`
 before handling an APDU, under one lock for all cards, which card creation holds too.
 
+`COUNTERFEIT <id>` turns a card into one that carries a copied certificate: it keeps the certificate
+(and its keys, PIN and pairings) but gets an unrelated identity key, which the applet does not check.
+On 4.x its secure channel signature no longer matches the certificate, so a client refuses it
+(`untrusted-keycard`); on 3.x it fails IDENTIFY and is reported untrusted. A blank 4.x card opens no
+secure channel until INIT, so counterfeit a card after loading it.
+
 `assignUniqueInstanceUid()` overwrites the applet's instance UID with random bytes, because jcardsim's
 RNG is deterministic and would otherwise give every card the same UID — colliding in the lib's
 pairing storage (keyed by instance UID).
@@ -94,6 +100,8 @@ CREATE <id> UNTRUSTED    -> OK <atrHex>   same, identity cert signed by the untr
 CREATE_EMPTY <id>        -> OK <atrHex>   card with no Keycard applet (SELECT fails)
 RESET  <id>              -> OK            recreate fresh / blank, keeping the card's trust flavour
 POWER  <id>              -> OK            power-cycle volatile state (PIN session) without wiping EEPROM
+COUNTERFEIT <id>         -> OK            swap the identity key, keeping the certificate and all state:
+                                          a genuine certificate the card cannot sign for (see below)
 ATR    <id>              -> OK <atrHex>
 APDU   <id> <apduHex>    -> OK <respHex>
 PING                     -> OK

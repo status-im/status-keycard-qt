@@ -59,16 +59,31 @@ public final class IdentCertificates {
      * || identity private key(32).
      */
     public static byte[] newStoreData(BigInteger caPrivateKey) {
-        BigInteger identity;
-        do {
-            identity = new BigInteger(256, RNG);
-        } while (identity.signum() == 0 || identity.compareTo(DOMAIN.getN()) >= 0);
-
+        BigInteger identity = randomPrivateKey();
         byte[] identityPublic = DOMAIN.getG().multiply(identity).normalize().getEncoded(true);
         byte[] cert = certificate(caPrivateKey, identityPublic);
         byte[] out = Arrays.copyOf(cert, CERT_LEN + KEY_LEN);
         System.arraycopy(fixed32(identity), 0, out, CERT_LEN, KEY_LEN);
         return out;
+    }
+
+    /**
+     * @p storeData with the identity private key replaced by an unrelated one: the certificate stays
+     * valid, but the card can no longer sign for the identity it names. The applet does not check
+     * that the two match.
+     */
+    public static byte[] withForeignKey(byte[] storeData) {
+        byte[] out = storeData.clone();
+        System.arraycopy(fixed32(randomPrivateKey()), 0, out, CERT_LEN, KEY_LEN);
+        return out;
+    }
+
+    private static BigInteger randomPrivateKey() {
+        BigInteger key;
+        do {
+            key = new BigInteger(256, RNG);
+        } while (key.signum() == 0 || key.compareTo(DOMAIN.getN()) >= 0);
+        return key;
     }
 
     /** CA signature over SHA256(identityPublic), with the recovery id the client uses to find the CA. */

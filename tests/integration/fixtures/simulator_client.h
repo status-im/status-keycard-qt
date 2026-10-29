@@ -13,8 +13,10 @@ public:
     bool supportsCreateEmpty() const;
     bool resetCard(const QString& cardId) const;
     bool createEmptyCard(const QString& cardId) const;
-    /// Applet 4.x only: a card whose certificate is signed by the simulator's untrusted CA
+    /// A card whose certificate is signed by the simulator's untrusted CA
     bool createUntrustedCard(const QString& cardId) const;
+    /// Swaps the card's identity key, keeping its certificate and state (a copied certificate)
+    bool counterfeitCard(const QString& cardId) const;
     /// Applet version the running simulator serves, empty if it predates the VERSION command
     QString appletVersion() const;
 
