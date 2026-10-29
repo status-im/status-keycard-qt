@@ -263,7 +263,9 @@ char* KeycardTestCreateCard(const char* cardId) {
 char* KeycardTestInsertCard(const char* cardId) {
     auto* b = sim_backend();
     if (!b || !cardId) return sim_result(false, "simulated backend not available");
-    return sim_result(b->insertCard(QString::fromUtf8(cardId)), "insertCard failed");
+    auto* impl = reinterpret_cast<StatusKeycardContextImpl*>(g_global_context);
+    const bool sessionStarted = impl->rpcService->sessionManager()->isStarted();
+    return sim_result(b->insertCard(QString::fromUtf8(cardId), sessionStarted), "insertCard failed");
 }
 
 char* KeycardTestRemoveCard(void) {

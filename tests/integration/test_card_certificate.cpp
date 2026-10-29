@@ -116,6 +116,13 @@ private slots:
             // 4.x: the secure channel is signed by the identity key, so the card cannot be used at all
             QVERIFY(!rpcSucceeded(login));
             QVERIFY(sawState(QStringLiteral("untrusted-keycard")));
+
+            // Reinserted, it is read and refused again rather than left at waiting-for-card
+            m_rpc.removeCard();
+            QTRY_VERIFY(m_rpc.lastStatusSignal().state == QStringLiteral("waiting-for-card"));
+            m_rpc.clearSignals();
+            m_rpc.plugInsertCard(cardId);
+            QTRY_VERIFY(m_rpc.lastStatusSignal().state == QStringLiteral("untrusted-keycard"));
         } else {
             // 3.x: only IDENTIFY uses the identity key; the card fails it and is reported untrusted
             QVERIFY2(rpcSucceeded(login), qPrintable(rpcErrorMessage(login)));

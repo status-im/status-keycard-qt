@@ -146,6 +146,31 @@ private slots:
         }
         QCOMPARE(waitingForCard, 1);
     }
+
+    void test_cardReinsertedAfterFailedLoginIsReadAgain()
+    {
+        // The session goes Idle once the login fails, but card detection keeps running (as the PC/SC
+        // backend's detection thread does), so the reinserted card is read again and the PIN can be retried
+        const QString cardId = freshCardId(QStringLiteral("reinsert"));
+        const QJsonObject load = m_rpc.loadCard(cardId, QString::fromUtf8(kMnemonicA));
+        QVERIFY2(rpcSucceeded(load), qPrintable(rpcErrorMessage(load)));
+        const QString keyUid = m_rpc.keyUidFromLastStatus();
+
+        m_rpc.stop();
+        m_rpc.plugInsertCard(cardId);
+        QVERIFY(!rpcSucceeded(m_rpc.login(QString::fromUtf8(kWrongPin), keyUid)));
+
+        m_rpc.removeCard();
+        QTRY_VERIFY(m_rpc.lastStatusSignal().state == QStringLiteral("waiting-for-card"));
+
+        m_rpc.clearSignals();
+        m_rpc.plugInsertCard(cardId);
+        QTRY_VERIFY(m_rpc.lastStatusSignal().state == QStringLiteral("ready"));
+        QCOMPARE(m_rpc.lastStatusSignal().keyUid, keyUid);
+
+        const QJsonObject retry = m_rpc.login(QString::fromUtf8(kDefaultPin), keyUid);
+        QVERIFY2(rpcSucceeded(retry), qPrintable(rpcErrorMessage(retry)));
+    }
 };
 
 QTEST_MAIN(TestPresence)
