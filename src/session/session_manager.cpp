@@ -88,35 +88,66 @@ bool SessionManager::start(bool logEnabled, const QString& logFilePath)
     // Disconnect any previous connections
     QObject::disconnect(m_commMgr.get(), nullptr, this, nullptr);
 
+    // Cross-thread signals are queued, and disconnecting does not drop the events already queued: a
+    // previous session's card initialization or removal could still reach this one and change its state
+    // (e.g. "not-keycard", or a cancelled operation). Each connection carries this session's epoch, and
+    // an event from an earlier session is ignored.
+    const quint64 epoch = ++m_sessionEpoch;
+    const auto current = [this, epoch]() { return m_sessionEpoch.load() == epoch; };
+
     // Connect to CommunicationManager signals
     // Use AutoConnection - direct if same thread, queued if cross-thread
     connect(m_commMgr.get(), &Keycard::ICommunicationManager::cardInitialized,
-            this, &SessionManager::onCardInitialized,
+            this, [this, current](const Keycard::CardInitializationResult& result) {
+                if (current()) {
+                    onCardInitialized(result);
+                }
+            },
             Qt::AutoConnection);
 
     connect(m_commMgr.get(), &Keycard::ICommunicationManager::cardLost,
-            this, &SessionManager::onCardRemoved,
+            this, [this, current]() {
+                if (current()) {
+                    onCardRemoved();
+                }
+            },
             Qt::AutoConnection);
 
     connect(m_commMgr.get(), &Keycard::ICommunicationManager::operationCancelled,
-            this, [this]() { publishCancelled(); },
+            this, [this, current]() {
+                if (current()) {
+                    publishCancelled();
+                }
+            },
             Qt::AutoConnection);
 
     if (auto cmdSet = m_commMgr->commandSet()) {
         QObject::disconnect(cmdSet.get(), nullptr, this, nullptr);
         connect(cmdSet.get(), &Keycard::CommandSet::cardLost,
-                this, &SessionManager::onCardRemoved,
+                this, [this, current]() {
+                    if (current()) {
+                        onCardRemoved();
+                    }
+                },
                 Qt::AutoConnection);
 
 #if !defined(Q_OS_ANDROID) && !defined(Q_OS_IOS)
         if (auto ch = cmdSet->channel()) {
             connect(ch.get(), &Keycard::KeycardChannel::readerAvailabilityChanged,
-                    this, &SessionManager::onReaderAvailabilityChanged,
+                    this, [this, current](bool available) {
+                        if (current()) {
+                            onReaderAvailabilityChanged(available);
+                        }
+                    },
                     Qt::AutoConnection);
 
             // Connect channel error signal for PCSC connection failures
             connect(ch.get(), &Keycard::KeycardChannel::error,
-                    this, &SessionManager::onChannelError,
+                    this, [this, current](const QString& errorMsg) {
+                        if (current()) {
+                            onChannelError(errorMsg);
+                        }
+                    },
                     Qt::AutoConnection);
         }
 #endif
@@ -175,7 +206,9 @@ void SessionManager::stop()
 
     // Stop card detection
     if (m_commMgr) {
-        // Disconnect from CommunicationManager signals so SessionManager doesn't react to card events anymore
+        // Disconnect from CommunicationManager signals so SessionManager doesn't react to card events
+        // anymore, and drop those already queued (see start())
+        ++m_sessionEpoch;
         QObject::disconnect(m_commMgr.get(), nullptr, this, nullptr);
 
         // Also disconnect from the channel's readerAvailabilityChanged signal

@@ -312,6 +312,8 @@ private:
     };
     std::atomic<int> m_compositeOpInFlight{0};
     std::atomic<bool> m_cardRemovedDuringComposite{false};
+    // Advanced by start() and stop(); card events carry the epoch they were connected in (see start())
+    std::atomic<quint64> m_sessionEpoch{0};
 };
 
 } // namespace StatusKeycard
