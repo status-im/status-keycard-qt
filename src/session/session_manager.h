@@ -249,6 +249,9 @@ private:
     bool ensureStarted();
     bool ensureAuthorized();
     bool failIfCardRemoved();
+    /// After waiting for the card: fails if it was removed ("Card removed") or, otherwise, if the
+    /// composite was cancelled (@p cancelledError)
+    bool failIfCompositeCancelled(bool cancelled, const QString& cancelledError);
 
     bool validateCompositeKeyUid(const QString& keyUid, const ApplicationInfoV2* keycardInfo);
     bool validateCompositeKeycardUid(const QString& keycardUid, const ApplicationInfoV2* keycardInfo);

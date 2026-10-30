@@ -88,7 +88,11 @@ SessionManager::RecoverKeys SessionManager::login(const QString& keyUid, const Q
         cancelled = m_compositeMethodCallCancelled;
     }
 
-    if (cancelled || failIfCardRemoved()) {
+    // A removal also cancels the composite: report it as such, whichever check it reached first
+    if (failIfCardRemoved()) {
+        return RecoverKeys();
+    }
+    if (cancelled) {
         if (m_lastError.isEmpty()) {
             setError(QStringLiteral("Login cancelled"));
         }
@@ -224,8 +228,7 @@ SessionManager::RecoverKeys SessionManager::recover(const QString& pin, const QS
         cancelled = m_compositeMethodCallCancelled;
     }
 
-    if (cancelled) {
-        setError("Recover cancelled");
+    if (failIfCompositeCancelled(cancelled, QStringLiteral("Recover cancelled"))) {
         return RecoverKeys();
     }
 
@@ -288,8 +291,7 @@ SessionManager::RecoverKeys SessionManager::load(const QString& pin, const QStri
         cancelled = m_compositeMethodCallCancelled;
     }
 
-    if (cancelled) {
-        setError("Load cancelled");
+    if (failIfCompositeCancelled(cancelled, QStringLiteral("Load cancelled"))) {
         return RecoverKeys();
     }
 
@@ -350,8 +352,7 @@ SessionManager::ExportExtendedPublicKeyResult SessionManager::exportExtendedPubl
         cancelled = m_compositeMethodCallCancelled;
     }
 
-    if (cancelled) {
-        setError("exportExtendedPublicKey cancelled");
+    if (failIfCompositeCancelled(cancelled, QStringLiteral("exportExtendedPublicKey cancelled"))) {
         return ExportExtendedPublicKeyResult();
     }
 
@@ -434,8 +435,7 @@ SessionManager::ExportPublicKeyResult SessionManager::exportPublicKey(const QStr
         cancelled = m_compositeMethodCallCancelled;
     }
 
-    if (cancelled) {
-        setError("exportPublicKey cancelled");
+    if (failIfCompositeCancelled(cancelled, QStringLiteral("exportPublicKey cancelled"))) {
         return ExportPublicKeyResult();
     }
 
@@ -503,8 +503,7 @@ bool SessionManager::changeKeycardPIN(const QString& keyUid, const QString& pin,
         cancelled = m_compositeMethodCallCancelled;
     }
 
-    if (cancelled) {
-        setError("changePIN cancelled");
+    if (failIfCompositeCancelled(cancelled, QStringLiteral("changePIN cancelled"))) {
         return false;
     }
 
@@ -575,8 +574,7 @@ bool SessionManager::changeKeycardPUK(const QString& keyUid, const QString& pin,
         cancelled = m_compositeMethodCallCancelled;
     }
 
-    if (cancelled) {
-        setError("changePUK cancelled");
+    if (failIfCompositeCancelled(cancelled, QStringLiteral("changePUK cancelled"))) {
         return false;
     }
 
@@ -647,8 +645,7 @@ bool SessionManager::unblockUsingPUK(const QString& keyUid, const QString& puk, 
         cancelled = m_compositeMethodCallCancelled;
     }
 
-    if (cancelled) {
-        setError("unblockUsingPUK cancelled");
+    if (failIfCompositeCancelled(cancelled, QStringLiteral("unblockUsingPUK cancelled"))) {
         return false;
     }
 
@@ -714,8 +711,7 @@ SessionManager::Metadata SessionManager::getKeycardMetadata(const QString& pin, 
         cancelled = m_compositeMethodCallCancelled;
     }
 
-    if (cancelled) {
-        setError("getKeycardMetadata cancelled");
+    if (failIfCompositeCancelled(cancelled, QStringLiteral("getKeycardMetadata cancelled"))) {
         return Metadata();
     }
 
@@ -795,8 +791,7 @@ bool SessionManager::storeKeycardMetadata(const QString& pin, const QString& nam
         cancelled = m_compositeMethodCallCancelled;
     }
 
-    if (cancelled) {
-        setError("storeKeycardMetadata cancelled");
+    if (failIfCompositeCancelled(cancelled, QStringLiteral("storeKeycardMetadata cancelled"))) {
         return false;
     }
 
@@ -854,8 +849,7 @@ SessionManager::SignResult SessionManager::sign(const QString& keyUid, const QSt
         cancelled = m_compositeMethodCallCancelled;
     }
 
-    if (cancelled) {
-        setError("sign cancelled");
+    if (failIfCompositeCancelled(cancelled, QStringLiteral("sign cancelled"))) {
         return SignResult();
     }
 
@@ -982,8 +976,7 @@ bool SessionManager::factoryResetKeycard(const QString& storageFilePath,
         cancelled = m_compositeMethodCallCancelled;
     }
 
-    if (cancelled) {
-        setError("factoryReset cancelled");
+    if (failIfCompositeCancelled(cancelled, QStringLiteral("factoryReset cancelled"))) {
         return false;
     }
 
