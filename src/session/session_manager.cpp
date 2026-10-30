@@ -293,6 +293,15 @@ void SessionManager::onCardRemoved()
     qDebug() << "StatusKeycardQt::Ignoring card removal on mobile";
     return;
 #else
+    // Every removal clears CommandSet's card-ready flag before it is reported (onTargetLost), and the
+    // CommunicationManager relays it once more through the event queue. A removal arriving while a card
+    // is ready again is such a late relay of an earlier removal: it must not cancel the operation
+    // running on the card detected since.
+    if (m_commMgr && m_commMgr->commandSet() && m_commMgr->commandSet()->isCardReady()) {
+        qDebug() << "StatusKeycardQt::SessionManager: Ignoring a stale card removal, a card is present";
+        return;
+    }
+
     m_currentCardUID.clear();
 
     if (!m_started) {
@@ -400,6 +409,19 @@ bool SessionManager::failIfCardRemoved()
     }
     setError(QStringLiteral("Card removed"));
     return true;
+}
+
+bool SessionManager::failIfCompositeCancelled(bool cancelled, const QString& cancelledError)
+{
+    // A removal also cancels the composite; report it as what it is, whichever check it reached first
+    if (failIfCardRemoved()) {
+        return true;
+    }
+    if (cancelled) {
+        setError(cancelledError);
+        return true;
+    }
+    return false;
 }
 
 bool SessionManager::ensureAuthorized()
