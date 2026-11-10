@@ -33,7 +33,9 @@ endfunction()
 
 # Add test executables
 add_keycard_test(test_rpc_service mocks/mock_communication_manager.cpp)
-add_keycard_test(test_session_manager mocks/mock_communication_manager.cpp)
+add_keycard_test(test_session_manager mocks/mock_communication_manager.cpp
+    ${KEYCARD_QT_DIR}/tests/mocks/mock_backend.cpp)
+target_include_directories(test_session_manager PRIVATE ${KEYCARD_QT_DIR}/tests)
 add_keycard_test(test_signal_manager)
 add_keycard_test(test_pairing_password_holder)
 add_keycard_test(test_bip32_xpub_helpers)
