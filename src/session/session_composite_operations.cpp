@@ -72,7 +72,7 @@ SessionManager::RecoverKeys SessionManager::login(const QString& keyUid, const Q
     std::unique_ptr<void, decltype(batchGuard)> guard(reinterpret_cast<void*>(1), batchGuard);
 
     // Step 1: Start card detection
-    if (!start(logEnabled, logFilePath)) {
+    if (!start(logEnabled, logFilePath, inFlight.clientStopEpoch())) {
         setError(QString("Failed to start: %1").arg(m_lastError));
         return RecoverKeys();
     }
@@ -212,7 +212,7 @@ SessionManager::RecoverKeys SessionManager::recover(const QString& pin, const QS
     std::unique_ptr<void, decltype(batchGuard)> guard(reinterpret_cast<void*>(1), batchGuard);
 
     // Step 1: Start card detection
-    if (!start(logEnabled, logFilePath)) {
+    if (!start(logEnabled, logFilePath, inFlight.clientStopEpoch())) {
         setError(QString("Failed to start: %1").arg(m_lastError));
         return RecoverKeys();
     }
@@ -275,7 +275,7 @@ SessionManager::RecoverKeys SessionManager::load(const QString& pin, const QStri
     std::unique_ptr<void, decltype(batchGuard)> guard(reinterpret_cast<void*>(1), batchGuard);
 
     // Step 1: Start card detection
-    if (!start(logEnabled, logFilePath)) {
+    if (!start(logEnabled, logFilePath, inFlight.clientStopEpoch())) {
         setError(QString("Failed to start: %1").arg(m_lastError));
         return RecoverKeys();
     }
@@ -337,7 +337,7 @@ SessionManager::ExportExtendedPublicKeyResult SessionManager::exportExtendedPubl
     auto batchGuard = [this](void*) { m_commMgr->endBatchOperations(); };
     std::unique_ptr<void, decltype(batchGuard)> guard(reinterpret_cast<void*>(1), batchGuard);
 
-    if (!start(logEnabled, logFilePath)) {
+    if (!start(logEnabled, logFilePath, inFlight.clientStopEpoch())) {
         setError(QString("Failed to start: %1").arg(m_lastError));
         return ExportExtendedPublicKeyResult();
     }
@@ -420,7 +420,7 @@ SessionManager::ExportPublicKeyResult SessionManager::exportPublicKey(const QStr
     auto batchGuard = [this](void*) { m_commMgr->endBatchOperations(); };
     std::unique_ptr<void, decltype(batchGuard)> guard(reinterpret_cast<void*>(1), batchGuard);
 
-    if (!start(logEnabled, logFilePath)) {
+    if (!start(logEnabled, logFilePath, inFlight.clientStopEpoch())) {
         setError(QString("Failed to start: %1").arg(m_lastError));
         return ExportPublicKeyResult();
     }
@@ -488,7 +488,7 @@ bool SessionManager::changeKeycardPIN(const QString& keyUid, const QString& pin,
     auto batchGuard = [this](void*) { m_commMgr->endBatchOperations(); };
     std::unique_ptr<void, decltype(batchGuard)> guard(reinterpret_cast<void*>(1), batchGuard);
 
-    if (!start(logEnabled, logFilePath)) {
+    if (!start(logEnabled, logFilePath, inFlight.clientStopEpoch())) {
         setError(QString("Failed to start: %1").arg(m_lastError));
         return false;
     }
@@ -559,7 +559,7 @@ bool SessionManager::changeKeycardPUK(const QString& keyUid, const QString& pin,
     auto batchGuard = [this](void*) { m_commMgr->endBatchOperations(); };
     std::unique_ptr<void, decltype(batchGuard)> guard(reinterpret_cast<void*>(1), batchGuard);
 
-    if (!start(logEnabled, logFilePath)) {
+    if (!start(logEnabled, logFilePath, inFlight.clientStopEpoch())) {
         setError(QString("Failed to start: %1").arg(m_lastError));
         return false;
     }
@@ -630,7 +630,7 @@ bool SessionManager::unblockUsingPUK(const QString& keyUid, const QString& puk, 
     auto batchGuard = [this](void*) { m_commMgr->endBatchOperations(); };
     std::unique_ptr<void, decltype(batchGuard)> guard(reinterpret_cast<void*>(1), batchGuard);
 
-    if (!start(logEnabled, logFilePath)) {
+    if (!start(logEnabled, logFilePath, inFlight.clientStopEpoch())) {
         setError(QString("Failed to start: %1").arg(m_lastError));
         return false;
     }
@@ -696,7 +696,7 @@ SessionManager::Metadata SessionManager::getKeycardMetadata(const QString& pin, 
     auto batchGuard = [this](void*) { m_commMgr->endBatchOperations(); };
     std::unique_ptr<void, decltype(batchGuard)> guard(reinterpret_cast<void*>(1), batchGuard);
 
-    if (!start(logEnabled, logFilePath)) {
+    if (!start(logEnabled, logFilePath, inFlight.clientStopEpoch())) {
         setError(QString("Failed to start: %1").arg(m_lastError));
         return Metadata();
     }
@@ -776,7 +776,7 @@ bool SessionManager::storeKeycardMetadata(const QString& pin, const QString& nam
     auto batchGuard = [this](void*) { m_commMgr->endBatchOperations(); };
     std::unique_ptr<void, decltype(batchGuard)> guard(reinterpret_cast<void*>(1), batchGuard);
 
-    if (!start(logEnabled, logFilePath)) {
+    if (!start(logEnabled, logFilePath, inFlight.clientStopEpoch())) {
         setError(QString("Failed to start: %1").arg(m_lastError));
         return false;
     }
@@ -834,7 +834,7 @@ SessionManager::SignResult SessionManager::sign(const QString& keyUid, const QSt
     auto batchGuard = [this](void*) { m_commMgr->endBatchOperations(); };
     std::unique_ptr<void, decltype(batchGuard)> guard(reinterpret_cast<void*>(1), batchGuard);
 
-    if (!start(logEnabled, logFilePath)) {
+    if (!start(logEnabled, logFilePath, inFlight.clientStopEpoch())) {
         setError(QString("Failed to start: %1").arg(m_lastError));
         return SignResult();
     }
@@ -961,7 +961,7 @@ bool SessionManager::factoryResetKeycard(const QString& storageFilePath,
     auto batchGuard = [this](void*) { m_commMgr->endBatchOperations(); };
     std::unique_ptr<void, decltype(batchGuard)> guard(reinterpret_cast<void*>(1), batchGuard);
 
-    if (!start(logEnabled, logFilePath)) {
+    if (!start(logEnabled, logFilePath, inFlight.clientStopEpoch())) {
         setError(QString("Failed to start: %1").arg(m_lastError));
         return false;
     }
