@@ -253,7 +253,7 @@ QJsonObject RpcService::recoverKeysToJson(const SessionManager::RecoverKeys& key
 
 QJsonObject RpcService::handleStop(quint64 id, const QJsonObject& params) {
     Q_UNUSED(params);
-    m_sessionManager->stop();
+    m_sessionManager->stopForClient();
     return createSuccessResponse(id, QJsonObject());
 }
 

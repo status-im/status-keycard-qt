@@ -9,11 +9,41 @@
 #include <keycard-qt/command_set.h>
 #include <keycard-qt/keycard_channel.h>
 #include <keycard-qt/communication_manager.h>
+#include <QSemaphore>
+#include <QThread>
 #include <memory>
 #include <atomic>
 
 using namespace StatusKeycard;
 using namespace StatusKeycardTest;
+
+// Pauses inside startDetection() until released: a start descheduled while a stop comes in.
+class PausingCommunicationManager : public Keycard::CommunicationManager {
+public:
+    std::atomic<bool> armed{false};
+    QSemaphore paused;
+    QSemaphore release;
+
+    bool startDetection() override {
+        if (armed.exchange(false)) {
+            paused.release();
+            release.acquire();
+        }
+        return Keycard::CommunicationManager::startDetection();
+    }
+};
+
+// Notifies when a stop reached the communication manager - the stopping thread posts its
+// native stop right after.
+class StopNotifyingCommunicationManager : public Keycard::CommunicationManager {
+public:
+    QSemaphore stopping;
+
+    void stopDetection() override {
+        Keycard::CommunicationManager::stopDetection();
+        stopping.release();
+    }
+};
 
 class TestSessionManager : public QObject
 {
@@ -152,6 +182,86 @@ private slots:
         QCoreApplication::processEvents();
 
         QCOMPARE(backend->state(), Keycard::ChannelState::Idle);
+    }
+
+    // A stop that comes in while a start runs (on a worker) - past its checks, before the
+    // communication manager started detection - stops what that start started.
+    void testStopDuringAStartStopsWhatItStarted()
+    {
+        auto* backend = new Keycard::Test::MockBackend();
+        backend->setReconnectWhenWaiting(false);
+        auto channel = std::make_shared<Keycard::KeycardChannel>(backend);
+        auto commandSet = std::make_shared<Keycard::CommandSet>(channel, nullptr,
+            [](const QString&) { return QString(); });
+        auto commMgr = std::make_shared<PausingCommunicationManager>();
+        QVERIFY(commMgr->init(commandSet));
+        m_manager->setCommunicationManager(commMgr);
+
+        commMgr->armed = true;
+        std::unique_ptr<QThread> starter(QThread::create([this]() { m_manager->start(); }));
+        starter->start();
+        QVERIFY(commMgr->paused.tryAcquire(1, 5000));
+
+        std::unique_ptr<QThread> stopper(QThread::create([this]() { m_manager->stopForClient(); }));
+        stopper->start();
+        QThread::msleep(50);  // the stop waits for the start
+        commMgr->release.release();
+        while (!starter->isFinished() || !stopper->isFinished()) {
+            QCoreApplication::processEvents();
+            QThread::msleep(1);
+        }
+        for (int i = 0; i < 10; ++i) {
+            QCoreApplication::processEvents();
+        }
+
+        QVERIFY(!m_manager->isStarted());
+        QCOMPARE(backend->state(), Keycard::ChannelState::Idle);
+    }
+
+    // A stop on a worker waits for the GUI thread (where the command set lives) to stop
+    // detection. A client stop on the GUI meanwhile must neither wait for that worker nor
+    // return before detection is off.
+    void testClientStopOnTheGuiWhileAWorkerStopWaitsForIt()
+    {
+        auto* backend = new Keycard::Test::MockBackend();
+        backend->setReconnectWhenWaiting(false);
+        auto channel = std::make_shared<Keycard::KeycardChannel>(backend);
+        auto commandSet = std::make_shared<Keycard::CommandSet>(channel, nullptr,
+            [](const QString&) { return QString(); });
+        auto commMgr = std::make_shared<StopNotifyingCommunicationManager>();
+        QVERIFY(commMgr->init(commandSet));
+        m_manager->setCommunicationManager(commMgr);
+
+        QVERIFY(m_manager->start());
+        QTRY_COMPARE(backend->state(), Keycard::ChannelState::WaitingForCard);
+
+        std::unique_ptr<QThread> worker(QThread::create([this]() { m_manager->stop(); }));
+        worker->start();
+        QVERIFY(commMgr->stopping.tryAcquire(1, 5000));
+        QThread::msleep(20);  // the worker posted its native stop and waits for this thread
+
+        QElapsedTimer elapsed;
+        elapsed.start();
+        m_manager->stopForClient();
+        QVERIFY2(elapsed.elapsed() < 500, "the client stop waited for the worker");
+        QCOMPARE(backend->state(), Keycard::ChannelState::Idle);
+
+        while (!worker->isFinished()) {
+            QCoreApplication::processEvents();
+            QThread::msleep(1);
+        }
+    }
+
+    // A composite operation that began before the client stopped the session can't start
+    // detection afterwards; one that begins after it can.
+    void testOperationBegunBeforeAClientStopDoesNotStart()
+    {
+        m_manager->stopForClient();
+        QVERIFY(!m_manager->start(false, QString(), quint64(0)));
+        QVERIFY(!m_manager->isStarted());
+
+        QVERIFY(m_manager->start(false, QString(), quint64(1)));
+        QVERIFY(m_manager->isStarted());
     }
 
     void testStopNotStarted()
