@@ -242,6 +242,7 @@ public slots:
 
 private:
     void setState(SessionState newState);
+    void stopDetectionAndWait();
     void publishCancelled();
     void setError(const QString& error);
 

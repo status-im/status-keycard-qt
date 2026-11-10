@@ -5,6 +5,10 @@
 #include "session/session_manager.h"
 #include "session/session_state.h"
 #include "mocks/mock_communication_manager.h"
+#include "mocks/mock_backend.h"
+#include <keycard-qt/command_set.h>
+#include <keycard-qt/keycard_channel.h>
+#include <keycard-qt/communication_manager.h>
 #include <memory>
 #include <atomic>
 
@@ -103,6 +107,51 @@ private slots:
 
         QVERIFY(!m_manager->isStarted());
         QCOMPARE(m_manager->currentState(), SessionState::UnknownReaderState);
+    }
+
+    // A client that stops the session (logging out) and moves on must not receive card
+    // events of the stopped session. Detection has to be off when stop() returns: card
+    // detection that is only queued to stop keeps listening, and an NFC intent arriving
+    // meanwhile is reported after the caller moved on.
+    void testStopStopsDetectionBeforeReturning()
+    {
+        auto* backend = new Keycard::Test::MockBackend();
+        auto channel = std::make_shared<Keycard::KeycardChannel>(backend);
+        auto commandSet = std::make_shared<Keycard::CommandSet>(channel, nullptr,
+            [](const QString&) { return QString(); });
+        m_mockComm->setCommandSet(commandSet);
+
+        QVERIFY(m_manager->start());
+        backend->setState(Keycard::ChannelState::WaitingForCard);
+
+        m_manager->stop();
+
+        // No event processing in between: the stop already reached the channel.
+        QCOMPARE(backend->state(), Keycard::ChannelState::Idle);
+        m_mockComm->setCommandSet(nullptr);
+    }
+
+    // start() queues the detection start to the command set. A stop() that runs before
+    // that start is delivered - the client stopping the session while a composite
+    // operation started it from a worker - must not be overtaken by it: detection stays
+    // off once the queued events are processed.
+    void testStopDropsADetectionStartQueuedBeforeIt()
+    {
+        auto* backend = new Keycard::Test::MockBackend();
+        backend->setReconnectWhenWaiting(false);
+        auto channel = std::make_shared<Keycard::KeycardChannel>(backend);
+        auto commandSet = std::make_shared<Keycard::CommandSet>(channel, nullptr,
+            [](const QString&) { return QString(); });
+        auto commMgr = std::make_shared<Keycard::CommunicationManager>();
+        QVERIFY(commMgr->init(commandSet));
+        m_manager->setCommunicationManager(commMgr);
+
+        QVERIFY(m_manager->start());  // queues the detection start
+        m_manager->stop();            // before the queued start is delivered
+        QCoreApplication::processEvents();
+        QCoreApplication::processEvents();
+
+        QCOMPARE(backend->state(), Keycard::ChannelState::Idle);
     }
 
     void testStopNotStarted()

@@ -19,6 +19,7 @@
 #include <QCryptographicHash>
 #include <QEventLoop>
 #include <QTimer>
+#include <QSemaphore>
 #include <QtConcurrent/QtConcurrent>
 
 #ifdef KEYCARD_QT_HAS_OPENSSL
@@ -189,6 +190,46 @@ bool SessionManager::start(bool logEnabled, const QString& logFilePath)
     return true;
 }
 
+// Stops card detection and returns once every card event of the stopped session has been
+// handed to the receiver's thread. CommunicationManager::stopDetection() only queues the
+// stop to the command set's thread, so a card event (an Android NFC intent, a reader
+// event) could otherwise still be produced after stop() returned - and reach a caller that
+// already moved on (a client logging out and starting another account's session).
+// Waits for the stop and then for that thread to process what was queued to it until then,
+// so the signals those events emit are posted first. Bounded: a command blocked on card
+// I/O must not freeze the caller.
+void SessionManager::stopDetectionAndWait()
+{
+    // Marks detection as stopped by its client: the communication manager no longer
+    // restarts it, and starts queued before (by start(), say) don't run. It only queues
+    // the stop itself, though, hence the rest.
+    m_commMgr->stopDetection();
+    auto cmdSet = m_commMgr->commandSet();
+    if (!cmdSet) {
+        return;
+    }
+    Keycard::CommandSet* target = cmdSet.get();
+    if (target->thread() == QThread::currentThread()) {
+        target->stopDetection();
+        return;
+    }
+
+    // The command set is the call's context: the call is dropped if it is deleted first.
+    auto done = std::make_shared<QSemaphore>();
+    QMetaObject::invokeMethod(target, [target, done]() {
+        target->stopDetection();
+        // Queued only now that detection has stopped: events queued to this thread
+        // before (e.g. an NFC intent that arrived while it still listened) come first.
+        QMetaObject::invokeMethod(target, [done]() { done->release(); }, Qt::QueuedConnection);
+    }, Qt::QueuedConnection);
+
+    constexpr int timeoutMs = 2000;
+    if (!done->tryAcquire(1, timeoutMs)) {
+        qWarning() << "StatusKeycardQt::SessionManager: card detection did not stop within"
+                   << timeoutMs << "ms; late card events of this session may still follow";
+    }
+}
+
 void SessionManager::stop()
 {
     if (!m_started) {
@@ -221,7 +262,7 @@ void SessionManager::stop()
             m_commMgr->commandSet()->handleCardSwap();
         }
 
-        m_commMgr->stopDetection();
+        stopDetectionAndWait();
     }
 
     m_started = false;
