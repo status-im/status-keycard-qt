@@ -130,7 +130,9 @@ public:
     Keycard::ApplicationStatus applicationStatus() const override;
     void startBatchOperations() override;
     void endBatchOperations() override;
-    std::shared_ptr<Keycard::CommandSet> commandSet() const override { return nullptr; }
+    std::shared_ptr<Keycard::CommandSet> commandSet() const override { return m_commandSet; }
+    // A real command set, for tests of what reaches the card channel (none by default)
+    void setCommandSet(std::shared_ptr<Keycard::CommandSet> commandSet) { m_commandSet = commandSet; }
     
     // ========================================================================
     // Verification Methods
@@ -142,6 +144,7 @@ public:
 private:
     // State
     bool m_detectionStarted;
+    std::shared_ptr<Keycard::CommandSet> m_commandSet;
     int m_batchOperationCount;
     
     // Mock data

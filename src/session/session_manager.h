@@ -7,6 +7,9 @@
 #include <QObject>
 #include <QTimer>
 #include <QMutex>
+#include <QRecursiveMutex>
+#include <QSemaphore>
+#include <optional>
 #include <QWaitCondition>
 #include <atomic>
 #include <memory>
@@ -53,8 +56,14 @@ public:
     void setPairingPasswordHolder(std::shared_ptr<PairingPasswordHolder> holder) { m_pairingPassword = holder; }
 
     // Session lifecycle
-    bool start(bool logEnabled = false, const QString& logFilePath = QString());
+    // `admittedClientStopEpoch`: the client-stop epoch the caller (a composite operation)
+    // began in; start() refuses to run once the client stopped the session since then.
+    bool start(bool logEnabled = false, const QString& logFilePath = QString(),
+               std::optional<quint64> admittedClientStopEpoch = std::nullopt);
     void stop();
+    // The client ends its session (RPC Stop): like stop(), and composite operations that
+    // began before can't start detection again (see start()).
+    void stopForClient();
     bool isStarted() const { return m_started; }
 
     // Current state
@@ -242,6 +251,9 @@ public slots:
 
 private:
     void setState(SessionState newState);
+    std::shared_ptr<QSemaphore> stopLocked();
+    std::shared_ptr<QSemaphore> beginNativeStop();
+    void waitForNativeStop(const std::shared_ptr<QSemaphore>& done, quint64 epoch);
     void publishCancelled();
     void setError(const QString& error);
 
@@ -303,17 +315,29 @@ private:
 
     class CompositeOperationScope {
         SessionManager& m_sm;
+        const quint64 m_clientStopEpoch;
     public:
-        explicit CompositeOperationScope(SessionManager& sm) : m_sm(sm) {
+        explicit CompositeOperationScope(SessionManager& sm)
+            : m_sm(sm), m_clientStopEpoch(sm.m_clientStopEpoch.load()) {
             m_sm.m_cardRemovedDuringComposite.store(false);
             m_sm.m_compositeOpInFlight.fetch_add(1);
         }
         ~CompositeOperationScope() { m_sm.m_compositeOpInFlight.fetch_sub(1); }
+        // The client-stop epoch the operation began in (see start())
+        quint64 clientStopEpoch() const { return m_clientStopEpoch; }
     };
     std::atomic<int> m_compositeOpInFlight{0};
     std::atomic<bool> m_cardRemovedDuringComposite{false};
     // Advanced by start() and stop(); card events carry the epoch they were connected in (see start())
     std::atomic<quint64> m_sessionEpoch{0};
+    // Advanced by stopForClient(): composite operations that began before can't start again
+    std::atomic<quint64> m_clientStopEpoch{0};
+    // start() and stop() don't interleave: a stop arriving while a start runs waits for it,
+    // then stops what it started. Recursive: composite operations stop() inside start flows.
+    QRecursiveMutex m_lifecycleMutex;
+    // Detection may still run: set by start(), cleared once a stop's native part completed
+    // (m_lifecycleMutex)
+    bool m_detectionMayRun = false;
 };
 
 } // namespace StatusKeycard

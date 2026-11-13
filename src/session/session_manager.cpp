@@ -19,6 +19,7 @@
 #include <QCryptographicHash>
 #include <QEventLoop>
 #include <QTimer>
+#include <QSemaphore>
 #include <QtConcurrent/QtConcurrent>
 
 #ifdef KEYCARD_QT_HAS_OPENSSL
@@ -75,8 +76,15 @@ void SessionManager::setCommunicationManager(std::shared_ptr<Keycard::ICommunica
     m_commMgr = commMgr;
 }
 
-bool SessionManager::start(bool logEnabled, const QString& logFilePath)
+bool SessionManager::start(bool logEnabled, const QString& logFilePath,
+                           std::optional<quint64> admittedClientStopEpoch)
 {
+    QMutexLocker lifecycle(&m_lifecycleMutex);
+    if (admittedClientStopEpoch && *admittedClientStopEpoch != m_clientStopEpoch.load()) {
+        qDebug() << "StatusKeycardQt::SessionManager: not starting, the client stopped the session";
+        setError(QStringLiteral("The client stopped the keycard session"));
+        return false;
+    }
     if (!m_commMgr) {
         qWarning() << "SessionManager: No CommunicationManager available";
         qWarning() << "SessionManager: Call setCommunicationManager() before start()";
@@ -156,6 +164,7 @@ bool SessionManager::start(bool logEnabled, const QString& logFilePath)
     // Mark as started before startDetection(), because detection may emit
     // readerAvailabilityChanged synchronously and the slot needs m_started == true.
     m_started = true;
+    m_detectionMayRun = true;
 
     // Start card detection (CommunicationManager should already be init'd by caller)
     if (!m_commMgr->startDetection()) {
@@ -189,12 +198,100 @@ bool SessionManager::start(bool logEnabled, const QString& logFilePath)
     return true;
 }
 
-void SessionManager::stop()
+// Stops card detection; under the lifecycle lock. Every card event of the stopped session is
+// handed to the receiver's thread once the stop completed. CommunicationManager::stopDetection()
+// only queues the stop to the command set's thread, so a card event (an Android NFC intent, a
+// reader event) could otherwise still be produced after stop() returned - and reach a caller
+// that already moved on (a client logging out and starting another account's session).
+// When the command set lives on this thread the stop completes here (returns null). Otherwise
+// it is posted - under the lock, so it comes before any later start - and the caller waits
+// for the returned acknowledgement outside the lock (waitForNativeStop()): that thread may be
+// the one a client stop blocks on the lock.
+std::shared_ptr<QSemaphore> SessionManager::beginNativeStop()
 {
-    if (!m_started) {
-        return;
+    // Marks detection as stopped by its client: the communication manager no longer
+    // restarts it, and starts queued before (by start(), say) don't run. It only queues
+    // the stop itself, though, hence the rest.
+    m_commMgr->stopDetection();
+    auto cmdSet = m_commMgr->commandSet();
+    if (!cmdSet) {
+        m_detectionMayRun = false;
+        return nullptr;
+    }
+    Keycard::CommandSet* target = cmdSet.get();
+    if (target->thread() == QThread::currentThread()) {
+        target->stopDetection();
+        m_detectionMayRun = false;
+        return nullptr;
     }
 
+    // The command set is the call's context: the call is dropped if it is deleted first.
+    auto done = std::make_shared<QSemaphore>();
+    QMetaObject::invokeMethod(target, [target, done]() {
+        target->stopDetection();
+        // Queued only now that detection has stopped: events queued to this thread
+        // before (e.g. an NFC intent that arrived while it still listened) come first.
+        QMetaObject::invokeMethod(target, [done]() { done->release(); }, Qt::QueuedConnection);
+    }, Qt::QueuedConnection);
+    return done;
+}
+
+// Outside the lifecycle lock: waits (bounded - a command blocked on card I/O must not freeze
+// the caller) for a stop beginNativeStop() posted in session `epoch`.
+void SessionManager::waitForNativeStop(const std::shared_ptr<QSemaphore>& done, quint64 epoch)
+{
+    if (!done) {
+        return;
+    }
+    constexpr int timeoutMs = 2000;
+    if (!done->tryAcquire(1, timeoutMs)) {
+        qWarning() << "StatusKeycardQt::SessionManager: card detection did not stop within"
+                   << timeoutMs << "ms; a client stop completes it";
+        return;
+    }
+    QMutexLocker lifecycle(&m_lifecycleMutex);
+    if (m_sessionEpoch.load() == epoch) {  // not started again meanwhile
+        m_detectionMayRun = false;
+    }
+}
+
+void SessionManager::stopForClient()
+{
+    std::shared_ptr<QSemaphore> pending;
+    quint64 epoch = 0;
+    {
+        QMutexLocker lifecycle(&m_lifecycleMutex);
+        ++m_clientStopEpoch;
+        if (m_started) {
+            pending = stopLocked();
+        } else if (m_detectionMayRun) {
+            // A stop on another thread changed the state but its native stop may not have
+            // completed: complete it, so detection is off when the client's stop returns.
+            pending = beginNativeStop();
+        }
+        epoch = m_sessionEpoch.load();
+    }
+    waitForNativeStop(pending, epoch);
+}
+
+void SessionManager::stop()
+{
+    std::shared_ptr<QSemaphore> pending;
+    quint64 epoch = 0;
+    {
+        QMutexLocker lifecycle(&m_lifecycleMutex);
+        if (!m_started) {
+            return;
+        }
+        pending = stopLocked();
+        epoch = m_sessionEpoch.load();
+    }
+    waitForNativeStop(pending, epoch);
+}
+
+std::shared_ptr<QSemaphore> SessionManager::stopLocked()
+{
+    std::shared_ptr<QSemaphore> pending;
     qDebug() << "StatusKeycardQt::SessionManager: Stopping...";
 
     // Cancel any pending login wait
@@ -221,7 +318,7 @@ void SessionManager::stop()
             m_commMgr->commandSet()->handleCardSwap();
         }
 
-        m_commMgr->stopDetection();
+        pending = beginNativeStop();
     }
 
     m_started = false;
@@ -234,6 +331,7 @@ void SessionManager::stop()
     setState(SessionState::UnknownReaderState);
 
     qDebug() << "StatusKeycardQt::SessionManager: Stopped (detection paused, can restart with start())";
+    return pending;
 }
 
 void SessionManager::setState(SessionState newState)
